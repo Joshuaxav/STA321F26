@@ -1,0 +1,89 @@
+---
+title: 'STA321: Week #02 Assignment'
+author: "Joshua Xavier"
+date: "2026-09-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Question 2
+
+```{r Question 2}
+library(tidyverse)
+#setwd("C:/Users/joshu/OneDrive/Desktop/Fall 26/STA 321")
+protein <- read_csv("w02-Protein_Supply_Quantity_Data.csv")
+#View(protein)
+Spices <- protein$Spices
+n <- length(Spices)
+xbar <- mean(Spices)
+med <- median(Spices)
+```
+
+For this assignment I am using the **Spices** variable from the protein
+supply data set. This variable measures the percentage of protein for each of 
+the `r n` countries with a recorded value.
+Since spices are typically a minor part of meal and diet, I expect this variable to show right skew with most countries being at almost 0.
+
+## Question 3
+```{r Question 3}
+s <- sd(Spices)
+se <- s / sqrt(n)
+t.crit <- qt(0.975, df = n - 1)
+
+lower.t <- xbar - t.crit * se
+upper.t <- xbar + t.crit * se
+c(lower.t, upper.t)
+
+
+```
+The traditional 95% confidence interval for the mean of Spices is
+(`r round(lower.t, 4)`, `r round(upper.t, 4)`).
+
+
+## Question 4
+```{r Question 4}
+
+
+original.sample = sample( Spices, 170, replace = FALSE)
+spiceSample = NULL
+for(i in 1:1000){   
+  
+ replace = sample(x = original.sample, size = 170, replace = TRUE)
+ spiceSample[i] = mean(replace)
+}
+
+spiceSample.CI <- quantile(spiceSample, c(0.025, 0.975))
+spiceSample.CI
+
+```
+The bootstrap 95% confidence interval for the mean of Spices is
+(`r round(spiceSample.CI[1], 4)`, `r round(spiceSample.CI[2], 4)`).
+
+
+
+## Question 5
+```{r Question 5}
+hist(spiceSample)
+```
+
+## Question 6
+```{r Question 6}
+
+```
+The traditional interval is (`r round(lower.t, 4)`, `r round(upper.t, 4)`) and 
+the bootstrap interval is (`r round(spiceSample.CI[1], 4)`, `r round(spiceSample.CI[2], 4)`). 
+The two intervals are almost the same and are centered around the 
+same value, but the bootstrap interval is not perfectly symmetric around the 
+mean like the traditional interval is. This makes sense given the right skew 
+in the Spices variable. The traditional method assumes the sampling 
+distribution of the mean is normal, while the bootstrap method 
+does not, which shows in the skewness of the 
+data through resampling.
+
+We are 95% confident that the true mean percentage of protein supply coming 
+from spices, across countries, lies between `r round(spiceSample.CI[1], 4)` 
+and `r round(spiceSample.CI[2], 4)`, based on the bootstrap method.
