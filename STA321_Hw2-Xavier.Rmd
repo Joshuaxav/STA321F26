@@ -148,6 +148,8 @@ var_table <- tibble(
                    "School type: public/private",
                    "Program type: general/academic/vocational")
 )
+#points from package (knitr) to the function.
+#Keeps things organized and less confusing
 knitr::kable(var_table)
 ```
 The data set used in this project is the "hsb2" data set, an acronym for "high school and beyond". The data set contains 200 randomly selected observations from the "High School and Beyond" survey, which was conducted by the National Center for Education Statistics and polled seniors in high school. The dataset uses 11 total variables, 1 identifying variable (id), 5 numerical variables including the response variable write, and 5 categorical variables.
@@ -203,7 +205,7 @@ We can see from the residual plots that
 
 * The Residuals Vs Fitted plot has points randomly scattered points, but a bent line possibly indicating a linearity violation.
 
-* The Scale-Loaction plot, similar to the vs fitted plot, has points scattered randomly, but a bent line possibly indicating the constant variance assumption is not satisfied
+* The Scale-Location plot, similar to the vs fitted plot, has points scattered randomly, but a bent line possibly indicating the constant variance assumption is not satisfied
 
 * The QQ Residual plot shows departures from the red line near both tails, suggesting a violation of the normality assumption.
 
