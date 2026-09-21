@@ -1,0 +1,184 @@
+---
+title: "Highschool and Beyond Survey Analysis"
+author: "Joshua Xavier"
+date: "2026-09-14"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    fig_width: 4
+    fig_caption: yes
+    number_sections: yes
+    toc_collapsed: yes
+    code_folding: hide
+    code_download: yes
+    smooth_scroll: yes
+    theme: lumen
+  word_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    number_sections: yes
+    fig_width: 3
+    fig_height: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{=html}
+
+<style type="text/css">
+
+/* Cascading Style Sheets (CSS) is a stylesheet language used to describe the presentation of a document written in HTML or XML. it is a simple mechanism for adding style (e.g., fonts, colors, spacing) to Web documents. */
+
+h1.title {  /* Title - font specifications of the report title */
+  font-size: 24px;
+  color: DarkRed;
+  text-align: center;
+  font-family: "Gill Sans", sans-serif;
+}
+h4.author { /* Header 4 - font specifications for authors  */
+  font-size: 20px;
+  font-family: system-ui;
+  color: DarkRed;
+  text-align: center;
+}
+h4.date { /* Header 4 - font specifications for the date  */
+  font-size: 18px;
+  font-family: system-ui;
+  color: DarkBlue;
+  text-align: center;
+}
+h1 { /* Header 1 - font specifications for level 1 section title  */
+    font-size: 22px;
+    font-family: system-ui;
+    color: navy;
+    text-align: left;
+}
+h2 { /* Header 2 - font specifications for level 2 section title */
+    font-size: 20px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+
+h3 { /* Header 3 - font specifications of level 3 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+
+h4 { /* Header 4 - font specifications of level 4 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: darkred;
+    text-align: left;
+}
+
+body { background-color:white; }
+
+.highlightme { background-color:yellow; }
+
+p { background-color:white; }
+
+</style>
+```
+```{r setup, include=FALSE}
+# Detect, install and load packages if needed.
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+if (!require("MASS")) {
+   install.packages("MASS")
+   library(MASS)
+}
+if (!require("car")) {
+   install.packages("car")
+   library(car)
+}
+if (!require("scales")) {
+install.packages("scales")                                        
+library("scales") 
+}
+#
+# specifications of outputs of code in code chunks
+knitr::opts_chunk$set(echo = TRUE,      # include code chunk in the output file
+                      warnings = FALSE, # sometimes, you code may produce warning messages,
+                                        # you can choose to include the warning messages in
+                                        # the output file. 
+                      messages = FALSE, #
+                      results = TRUE,   # you can also decide whether to include the output
+                                        # in the output file.
+                      comment = NA      # remove leading ## in the model output
+                      )   
+library(tidyverse)
+library(knitr)
+library(tidyr)
+library(psych)
+library(VIM)
+library(dplyr)
+library(pander)
+library(broom)
+
+```
+
+\
+
+# Data set and Practical Questions
+In this section we will go over the data set, practical questions asked about the data, and preform exploratory data analysis to create the best model of the data. 
+
+
+## Data Description
+
+The data set used in this project is the "hsb2" data set, an acronym for "high school and beyond". The data set contains 200 randomly selected observations from the "High School and Beyond" survey, which was conducted by the National Center for Education Statistics and polled seniors in high school. The dataset uses 11 total variables, 1 identifying variable (id), 5 numerical variables, including the response variable write, and 5 categorical variables.
+
+The dataset contains enough information to investigate these questions because it includes socioeconomic status, academic program, demographic characteristics, and multiple standardized test scores for 200 students, with 11 variables. This allows us to compare academic preformance across different groups and use statistical methods to determine whether a meaningful relationships exist.
+
+* id: student id number
+* write (Y): writing test score
+* read (X1): reading test score
+* math (X2): math test score
+* science (X3): science test score
+* socst (X4): social studies test score
+* gender: student gender (2 levels)
+* race: student race/ethnicity (4 levels)
+* ses: socioeconomic status - low/middle/high (3 levels)
+* schtyp: school type - public/private (2 levels)
+* prog: program type - general/academic/vocational (3 levels)
+
+```{r import-data}
+hsb2 <- read.csv("https://raw.githubusercontent.com/Joshuaxav/STA321F26/main/hsb2.csv")
+hsb2$gender <- factor(hsb2$gender)
+hsb2$race   <- factor(hsb2$race)
+hsb2$ses    <- factor(hsb2$ses, levels = c("low", "middle", "high"))
+hsb2$schtyp <- factor(hsb2$schtyp)
+hsb2$prog   <- factor(hsb2$prog)
+```
+
+## Practical Question
+
+The primary question is to identify the association between a student's
+writing score and other test scores available in the data set, and to
+build a simple linear regression model that captures this relationship.
+
+
+
+## Exploratory Data Analysis
+
+We first explore the pairwise association between the numerical
+variables in the data set.
+
+```{r pairwise-scatterplot, fig.align='center', fig.width=7, fig.height=7, fig.cap="Figure 1: Pairwise scatter plot of numerical variables."}
+pairs.panels(hsb2[, c("read", "write", "math", "science", "socst")],
+             main = "Figure 1: Pairwise Scatterplots of Numerical Variables",
+             pch = 21,
+             bg = "lightblue")
+```
