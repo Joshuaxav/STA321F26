@@ -1,0 +1,535 @@
+---
+title: "Highschool and Beyond Survey Analysis"
+author: "Joshua Xavier"
+date: "2026-09-24"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    fig_width: 4
+    fig_caption: yes
+    number_sections: yes
+    toc_collapsed: yes
+    code_folding: hide
+    code_download: yes
+    smooth_scroll: yes
+    theme: lumen
+  word_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    number_sections: yes
+    fig_width: 3
+    fig_height: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{=html}
+
+<style type="text/css">
+
+/* Cascading Style Sheets (CSS) is a stylesheet language used to describe the presentation of a document written in HTML or XML. it is a simple mechanism for adding style (e.g., fonts, colors, spacing) to Web documents. */
+
+h1.title {  /* Title - font specifications of the report title */
+  font-size: 24px;
+  color: DarkRed;
+  text-align: center;
+  font-family: "Gill Sans", sans-serif;
+}
+h4.author { /* Header 4 - font specifications for authors  */
+  font-size: 20px;
+  font-family: system-ui;
+  color: DarkRed;
+  text-align: center;
+}
+h4.date { /* Header 4 - font specifications for the date  */
+  font-size: 18px;
+  font-family: system-ui;
+  color: DarkBlue;
+  text-align: center;
+}
+h1 { /* Header 1 - font specifications for level 1 section title  */
+    font-size: 22px;
+    font-family: system-ui;
+    color: navy;
+    text-align: left;
+}
+h2 { /* Header 2 - font specifications for level 2 section title */
+    font-size: 20px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+
+h3 { /* Header 3 - font specifications of level 3 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+
+h4 { /* Header 4 - font specifications of level 4 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: darkred;
+    text-align: left;
+}
+
+body { background-color:white; }
+
+.highlightme { background-color:yellow; }
+
+p { background-color:white; }
+
+</style>
+```
+```{r setup, include=FALSE}
+# Detect, install and load packages if needed.
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+if (!require("MASS")) {
+   install.packages("MASS")
+   library(MASS)
+}
+if (!require("car")) {
+   install.packages("car")
+   library(car)
+}
+if (!require("scales")) {
+install.packages("scales")                                        
+library("scales") 
+}
+#
+# specifications of outputs of code in code chunks
+knitr::opts_chunk$set(echo = TRUE,      # include code chunk in the output file
+                      warnings = FALSE, # sometimes, you code may produce warning messages,
+                                        # you can choose to include the warning messages in
+                                        # the output file. 
+                      messages = FALSE, #
+                      results = TRUE,   # you can also decide whether to include the output
+                                        # in the output file.
+                      comment = NA      # remove leading ## in the model output
+                      )   
+library(tidyverse)
+library(knitr)
+library(tidyr)
+library(psych)
+library(VIM)
+library(dplyr)
+library(pander)
+library(broom)
+library(lmtest)
+
+```
+
+# Introduction
+
+## Rationale and Research Questions
+
+Standardized test scores are used to compare how students are doing in school. In this project we look at writing scores and ask what else about a student goes along with them. Our research questions are:
+
+1. Which factors are associated with a student's writing score?
+2. How large are these associations after the other factors are held constant?
+3. Do the regular regression results and the bootstrap results lead to the same conclusions?
+
+Our main hypothesis is that reading score is positively associated with writing score. We also expect the math, science, and social studies scores to be positively associated with writing score.
+
+## Data Description
+
+TThe data set used in this project is the "hsb2" data set, an acronym for "high school and beyond". The data set contains 200 randomly selected observations from the "High School and Beyond" survey, which was conducted by the National Center for Education Statistics and polled seniors in high school. The dataset uses 11 total variables, 1 identifying variable (id), 5 numerical variables, including the response variable write, and 5 categorical variables.
+
+The dataset contains enough information to investigate these questions because it includes socioeconomic status, academic program, demographic characteristics, and multiple standardized test scores for 200 students, with 11 variables. This allows us to compare academic preformance across different groups and use statistical methods to determine whether a meaningful relationships exist.
+
+```{r import-data}
+hsb2 <- read.csv("https://raw.githubusercontent.com/Joshuaxav/STA321F26/main/hsb2.csv")
+hsb2$gender <- factor(hsb2$gender)
+hsb2$race   <- factor(hsb2$race)
+hsb2$ses    <- factor(hsb2$ses, levels = c("low", "middle", "high"))
+hsb2$schtyp <- factor(hsb2$schtyp)
+hsb2$prog   <- factor(hsb2$prog)
+```
+
+```{r var-table}
+var_table <- data.frame(
+  Variable = c("id", "write (Y)", "read", "math", "science", "socst",
+               "gender", "race", "ses", "schtyp", "prog"),
+  Type = c("Numerical (identifier)", "Numerical (response, continuous)",
+           "Numerical", "Numerical", "Numerical", "Numerical",
+           "Categorical (2 levels)", "Categorical (4 levels)",
+           "Categorical (3 levels)", "Categorical (2 levels)",
+           "Categorical (3 levels)"),
+  Description = c("Student id number",
+                  "Writing test score (points)",
+                  "Reading test score (points)",
+                  "Math test score (points)",
+                  "Science test score (points)",
+                  "Social studies test score (points)",
+                  "Student gender",
+                  "Student race/ethnicity",
+                  "Socioeconomic status: low/middle/high",
+                  "School type: public/private",
+                  "Program type: general/academic/vocational")
+)
+kable(var_table, caption = "Table 1: Variables in the hsb2 data set")
+```
+.
+
+# Data Preparation and Exploratory Analysis
+
+## Data Preparation
+
+I looked at whether we needed to create new variables, discretize a continuous variable, or combine categories. I decided not to do any of these. The existing test scores answer our research questions directly, so we did not need new variables. We did not discretize any test score because that would throw away information. The only category I thought about combining was race, since the asian group is small at n = 11, but race was not selected in the variable selection step below, so combining it would not have changed anything. All categorical variables were converted to factors, with ses ordered low, middle, high. There are no missing values in the data.
+
+## Exploratory Analysis
+
+We first look at the pairwise association between the numerical variables.
+
+```{r corr-table}
+cor_mat <- cor(hsb2[, c("write", "read", "math", "science", "socst")])
+kable(round(cor_mat, 3), caption = "Table 2: Correlation matrix of the test scores")
+```
+
+```{r pairwise-scatterplot, fig.align='center', fig.width=7, fig.height=7, fig.cap="Figure 1: Pairwise scatter plot of the numerical variables (test scores in points)."}
+pairs.panels(hsb2[, c("read", "write", "math", "science", "socst")],
+             main = "Pairwise Scatterplots of\nNumerical Variables",
+             pch = 21,
+             bg = "lightblue")
+```
+
+The five variables all show a positive relationship with each other. In general, students who scored higher in one subject also scored higher in the others. Every test score has a correlation of about 0.57 to 0.62 with write. Reading and math have the strongest relationship with each other at 0.66, while science and social studies have the weakest at 0.47. The points follow a fairly straight upward pattern, so a linear model looks reasonable.
+
+Because the four test scores are correlated with each other (0.47 to 0.66), we need to check for multicollinearity once they are all in the same model.
+
+# Model Building
+
+## Full Model
+
+We start with a model that includes every available predictor.
+
+```{r full-model}
+full.model <- lm(write ~ read + math + science + socst +
+                   gender + race + ses + schtyp + prog, data = hsb2)
+kable(summary(full.model)$coef, digits = 4,
+      caption = "Table 3: Coefficient estimates of the full model")
+```
+
+The full model has an R² of `r round(summary(full.model)$r.squared, 3)` and an adjusted R² of `r round(summary(full.model)$adj.r.squared, 3)`. math, science, socst, and gender are significant, while read (p = 0.077) is borderline.
+
+### Multicollinearity Check (VIF)
+
+I check the variance inflation factors. Since race, ses, and prog have more than one dummy variable, the plot shows the adjusted GVIF, which is GVIF^(1/(2*Df)). This puts every predictor on the same scale as a regular VIF taken to the square root.
+
+```{r full-vif, fig.align='center', fig.width=7, fig.height=5, fig.cap="Figure 2: Adjusted GVIF for each predictor in the full model."}
+vif_tab <- vif(full.model)
+kable(round(vif_tab, 3), caption = "Table 4: GVIF and adjusted GVIF of the full model")
+barplot(vif_tab[, 3], main = "Adjusted GVIF\n(GVIF^(1/(2*Df)))", col = "steelblue",
+        ylab = "Adjusted GVIF", las = 2)
+```
+
+The largest adjusted GVIF is about 1.57 (read), which is far below the usual cutoffs, so multicollinearity is not a problem here even though the test scores are correlated with each other.
+
+### Residual Analysis of the Full Model
+
+```{r diag-function}
+# helper so every residual plot has the same layout and a two-line title
+diag.plots <- function(m, label) {
+  par(mfrow = c(2, 2))
+  plot(m, sub.caption = "", cex.caption = 0.9,
+       caption = list(paste0("Residuals vs Fitted\n(", label, ")"),
+                      paste0("Normal Q-Q\n(", label, ")"),
+                      paste0("Scale-Location\n(", label, ")"),
+                      "Cook's distance",
+                      paste0("Residuals vs Leverage\n(", label, ")"),
+                      "Cook's dist vs Lev."))
+  par(mfrow = c(1, 1))
+}
+```
+
+```{r full-diagnostics, fig.align='center', fig.width=7, fig.height=7, fig.cap="Figure 3: Residual plots of the full model."}
+diag.plots(full.model, "full model")
+```
+
+The Residuals vs Fitted plot has points scattered around zero, but the red smoother makes a shallow arch. It sits slightly above zero in the middle of the fitted range and drops below zero at the highest fitted values. The Scale-Location smoother also arches, with the residual spread a little larger in the middle of the fitted range than at the ends. The Q-Q plot follows the line closely apart from a few points in the tails, and the Residuals vs Leverage plot shows no point with a large Cook's distance. These are mild patterns, not serious violations. I'll look at them again after variable selection, since removing predictors can change the residuals.
+
+## Variable Selection
+
+In the last assignment I picked variables using p-values. That is not a great approach because it depends on where we draw the line. This time I ran backward, forward, and stepwise selection.
+
+```{r selection}
+null.model <- lm(write ~ 1, data = hsb2)
+
+bwd  <- step(full.model, direction = "backward", trace = 0)
+fwd  <- step(null.model, scope = formula(full.model), direction = "forward", trace = 0)
+both <- step(full.model, direction = "both", trace = 0)
+
+sel_tab <- data.frame(
+  Method = c("Backward (AIC)", "Forward (AIC)", "Stepwise (AIC)"),
+  Selected_Model = c(deparse(formula(bwd)), deparse(formula(fwd)), deparse(formula(both)))
+)
+kable(sel_tab, caption = "Table 5: Models chosen by automatic variable selection")
+```
+All three methods choose the same set of predictors, read, math, science, socst, and gender. race, ses, schtyp, and prog were removed. We can also test this directly. Each of the four dropped factors is insignificant on its own when tested as a whole (race p = 0.124, ses p = 0.558, schtyp p = 0.345, prog p = 0.346, from `drop1()`), and a joint F-test of all four together also fails to reject (F = 1.25, p = 0.271). So dropping them loses nothing significant.
+
+```{r reduced-model}
+reduced.model <- both
+kable(anova(reduced.model, full.model), digits = 4,
+      caption = "Table 6: Nested F-test, selected model vs. full model")
+```
+
+## Residual Analysis of the Selected Model
+
+```{r reduced-diagnostics, fig.align='center', fig.width=7, fig.height=7, fig.cap="Figure 4: Residual plots of the selected model."}
+diag.plots(reduced.model, "selected model")
+```
+
+```{r reduced-tests}
+sw <- shapiro.test(residuals(reduced.model))
+bp <- bptest(reduced.model)
+test_tab <- data.frame(
+  Test = c("Shapiro-Wilk (normality)", "Breusch-Pagan (constant variance)"),
+  Statistic = c(unname(sw$statistic), unname(bp$statistic)),
+  p_value = c(sw$p.value, bp$p.value)
+)
+kable(test_tab, digits = 3, caption = "Table 7: Formal residual tests for the selected model")
+```
+
+The plots look about the same as the full model. The Q-Q plot follows the reference line closely, and the Shapiro-Wilk test has p = 0.975, so there is no evidence against normality. That test only has moderate power with n = 200, so a large p-value does not prove the residuals are normal, but together with the Q-Q plot it is good evidence that they are close. The Breusch-Pagan test (p = 0.189) shows no evidence of non-constant variance. The red smoother in the Residuals vs Fitted and Scale-Location plots still has the same shallow arch, so we checked where it comes from by plotting the residuals against each predictor.
+
+```{r resid-predictors, fig.align='center', fig.width=7, fig.height=7, fig.cap="Figure 5: Residuals of the selected model against each numerical predictor (test scores in points)."}
+residualPlots(reduced.model, terms = ~ read + math + science + socst,
+              fitted = FALSE, layout = c(2, 2), tests = FALSE, col = "gray40",
+              main = "")
+invisible(capture.output(curv <- residualPlots(reduced.model, plot = FALSE)))
+kable(curv, digits = 3,
+      caption = "Table 8: Curvature tests (quadratic term) for each predictor and Tukey's test for the fitted values")
+```
+
+None of the four test scores shows significant curvature on its own (all p-values are above 0.22), so the bend is not coming from one variable. Tukey's overall test is significant (p = 0.020), which says there is a small amount of curvature in the fitted values as a whole. This is a mild violation and it only shows up as a slight arch, but we mention it as a limitation in the discussion.
+
+## Box-Cox Transformation
+
+Since the smoother is bent, we check whether a transformation of the response would help. We transform the response instead of the predictors because the Box-Cox procedure is designed to stabilize variance, normalize the residuals, and improve linearity, and all of these are properties of the residuals (and so of the response).
+
+```{r boxcox-plot, fig.align='center', fig.width=5, fig.height=5, fig.cap="Figure 6: Box-Cox log-likelihood of the selected model."}
+bc <- boxcox(reduced.model, lambda = seq(-1, 4, 0.05))
+lambda.hat <- bc$x[which.max(bc$y)]
+# 95% CI: all lambdas whose log-likelihood is within qchisq(.95,1)/2 of the max
+lambda.ci  <- range(bc$x[bc$y > max(bc$y) - qchisq(0.95, 1) / 2])
+```
+
+The optimal value is $\hat\lambda =$ `r lambda.hat`, and the 95% confidence interval for $\lambda$ (all values within qchisq(0.95, 1)/2 of the maximum log-likelihood) is about (`r lambda.ci[1]`, `r lambda.ci[2]`). This interval does not include 1, so a transformation is technically suggested. We test this directly by fitting the model with $\lambda = 2.1$.
+
+```{r boxcox-apply, fig.align='center', fig.width=7, fig.height=7, fig.cap="Figure 7: Residual plots of the Box-Cox transformed model (lambda = 2.1)."}
+lambda  <- 2.1
+hsb2$write.bc <- (hsb2$write^lambda - 1) / lambda
+boxcox.model <- lm(write.bc ~ read + math + science + socst + gender, data = hsb2)
+diag.plots(boxcox.model, "Box-Cox model")
+```
+
+```{r boxcox-compare}
+compare_table <- data.frame(
+  Model = c("write (original scale)", "Box-Cox transformed (lambda = 2.1)"),
+  R_squared = c(summary(reduced.model)$r.squared, summary(boxcox.model)$r.squared),
+  Shapiro_p = c(shapiro.test(residuals(reduced.model))$p.value,
+                shapiro.test(residuals(boxcox.model))$p.value)
+)
+kable(compare_table, digits = 4, caption = "Table 9: Original vs. Box-Cox transformed model")
+```
+
+The transformed model is almost the same. R² only moves from 0.602 to 0.605, and the Shapiro-Wilk p-value actually goes down a little, from 0.975 to 0.937 (both are still far from significant). The arch in the Residuals vs Fitted and Scale-Location plots is still there. So the bend is not something a power transformation fixes. We keep the model on the original scale, which means the coefficients are in writing-score points and are easy to interpret.
+
+## Goodness-of-Fit Comparison
+
+We compare the full model and the selected model with several goodness-of-fit measures. Both models use the original scale, so SSE, AIC, SBC, and PRESS can be compared directly. Mallows' Cp is computed with the MSE of the full model, which is the standard definition.
+
+```{r gof-function}
+gof.table <- function(m, mfull) {
+  n   <- length(resid(m))
+  p   <- length(coef(m))
+  SSE <- sum(resid(m)^2)
+  MSEf <- summary(mfull)$sigma^2
+  Cp  <- SSE / MSEf - (n - 2 * p)
+  AIC <- n * log(SSE) - n * log(n) + 2 * p
+  SBC <- n * log(SSE) - n * log(n) + log(n) * p
+  h   <- hatvalues(m)
+  PRESS <- sum((resid(m) / (1 - h))^2)
+  data.frame(Coefficients = p, SSE = SSE, R.sq = summary(m)$r.squared,
+             R.adj = summary(m)$adj.r.squared, Cp = Cp, AIC = AIC, SBC = SBC,
+             PRESS = PRESS)
+}
+gof <- rbind(gof.table(full.model, full.model), gof.table(reduced.model, full.model))
+rownames(gof) <- c("full.model", "selected.model")
+kable(gof, digits = 3, caption = "Table 10: Goodness-of-fit measures of the two candidate models")
+```
+
+The selected model has a slightly lower R² (0.602 vs. 0.622), but its adjusted R² is nearly the same (0.591 vs. 0.596), and it has better AIC, SBC, and PRESS than the full model. Cp for the full model always equals its number of coefficients (14). For the selected model Cp is about 8.0 compared to 6 coefficients, which is a little above 6 and suggests a small amount of bias relative to the full model, but the F-test in Table 6 says the dropped variables do not add significantly. Taking everything together, **we choose the selected model as our final model.**
+
+## Final Model
+
+```{r final-model}
+final.model <- reduced.model
+kable(summary(final.model)$coef, digits = 4,
+      caption = "Table 11: Coefficient estimates of the final model (response in writing-score points)")
+```
+
+The final model is (rounded to two decimals; the table above has four):
+
+$$
+\widehat{write} = 11.63 + 0.13\times read + 0.24\times math + 0.24\times science + 0.23\times socst - 5.49\times gendermale
+$$
+
+where gendermale is 1 for male students and 0 for female students.
+
+# Bootstrapping the Final Model
+
+We build bootstrap confidence intervals with both bootstrap methods. We use B = 5000 resamples and set a seed so the results can be reproduced.
+
+## Bootstrapping Records
+
+In this method we resample whole rows (students) with replacement, refit the model on each resample, and save the coefficients. The 2.5th and 97.5th percentiles of the saved coefficients form the 95% interval.
+
+```{r boot-records}
+set.seed(321)
+B <- 5000
+n <- nrow(hsb2)
+
+boot.rec <- matrix(NA, nrow = B, ncol = length(coef(final.model)))
+colnames(boot.rec) <- names(coef(final.model))
+
+for (i in 1:B) {
+  boot.id  <- sample(1:n, n, replace = TRUE)
+  boot.fit <- lm(write ~ read + math + science + socst + gender,
+                 data = hsb2[boot.id, ])
+  boot.rec[i, ] <- coef(boot.fit)
+}
+ci.rec <- t(apply(boot.rec, 2, quantile, probs = c(0.025, 0.975)))
+```
+
+## Bootstrapping Residuals
+
+In this method we keep the predictors fixed. We build new responses by adding randomly resampled residuals to the fitted values, refit the model, and save the coefficients.
+
+```{r boot-residuals}
+set.seed(321)
+fit.vals <- fitted(final.model)
+res.vals <- residuals(final.model)
+
+boot.res <- matrix(NA, nrow = B, ncol = length(coef(final.model)))
+colnames(boot.res) <- names(coef(final.model))
+
+for (i in 1:B) {
+  boot.data <- hsb2
+  boot.data$write <- fit.vals + sample(res.vals, n, replace = TRUE)
+  boot.fit <- lm(write ~ read + math + science + socst + gender, data = boot.data)
+  boot.res[i, ] <- coef(boot.fit)
+}
+ci.res <- t(apply(boot.res, 2, quantile, probs = c(0.025, 0.975)))
+```
+
+```{r boot-hist, fig.align='center', fig.width=8, fig.height=6, fig.cap="Figure 8: Bootstrap distributions of the read and gender coefficients. The dashed lines are the 95% bootstrap limits and the solid line is zero."}
+par(mfrow = c(2, 2))
+hist(boot.rec[, "read"], breaks = 30, col = "lightblue", xlab = "read coefficient (points)",
+     main = "Records bootstrap:\nread")
+abline(v = ci.rec["read", ], lty = 2, lwd = 2, col = "red"); abline(v = 0, lwd = 2)
+hist(boot.rec[, "gendermale"], breaks = 30, col = "lightblue", xlab = "gendermale coefficient (points)",
+     main = "Records bootstrap:\ngendermale")
+abline(v = ci.rec["gendermale", ], lty = 2, lwd = 2, col = "red"); abline(v = 0, lwd = 2)
+hist(boot.res[, "read"], breaks = 30, col = "lightgreen", xlab = "read coefficient (points)",
+     main = "Residual bootstrap:\nread")
+abline(v = ci.res["read", ], lty = 2, lwd = 2, col = "red"); abline(v = 0, lwd = 2)
+hist(boot.res[, "gendermale"], breaks = 30, col = "lightgreen", xlab = "gendermale coefficient (points)",
+     main = "Residual bootstrap:\ngendermale")
+abline(v = ci.res["gendermale", ], lty = 2, lwd = 2, col = "red"); abline(v = 0, lwd = 2)
+par(mfrow = c(1, 1))
+```
+
+# Combining the Results
+
+## Summary of the Regular and Bootstrap Results
+
+```{r combine-table}
+ols.ci <- confint(final.model, level = 0.95)
+combined <- data.frame(
+  Estimate   = coef(final.model),
+  OLS_p      = summary(final.model)$coef[, 4],
+  OLS_lower  = ols.ci[, 1],  OLS_upper  = ols.ci[, 2],
+  Rec_lower  = ci.rec[, 1],  Rec_upper  = ci.rec[, 2],
+  Res_lower  = ci.res[, 1],  Res_upper  = ci.res[, 2]
+)
+kable(combined, digits = 3,
+      col.names = c("Estimate", "OLS p-value", "OLS lower", "OLS upper",
+                    "Records lower", "Records upper", "Residuals lower", "Residuals upper"),
+      caption = "Table 12: 95% confidence intervals for the coefficients (points): OLS, records bootstrap, and residual bootstrap")
+```
+
+```{r boot-se}
+se_tab <- data.frame(
+  OLS       = summary(final.model)$coef[, 2],
+  Records   = apply(boot.rec, 2, sd),
+  Residuals = apply(boot.res, 2, sd)
+)
+kable(se_tab, digits = 4, caption = "Table 13: Standard errors of the coefficients (points) from each method")
+```
+
+For math, science, socst, and gender, all three methods give nearly the same interval, and none of them include zero. The standard errors from the two bootstraps are also very close to the regular standard errors (Table 13). This is what we expect because the residual tests did not show serious problems, and it means the regular inference for these four predictors can be trusted.
+
+The read coefficient is the one place where the methods differ slightly. The OLS interval is (-0.003, 0.254), which just includes zero (p = 0.055), and the residual bootstrap interval is (-0.001, 0.254), which is essentially right at zero. The records bootstrap interval is (0.012, 0.238), which just misses zero. About 1.6% of the records bootstrap slopes and 2.5% of the residual bootstrap slopes were at or below zero. So whether read is "significant" depends on the method, and all three results are right at the edge. This matches how we described read in the variable selection section: it is a borderline predictor, and we should not make a strong claim in either direction.
+
+Since the selected model has a slight arch in the residuals (Tukey's test), we lean toward the records bootstrap when we report intervals. It does not assume the mean function is exactly right or that the errors have constant variance, while the residual bootstrap does. Our recommendation is to report the OLS estimates together with the records bootstrap intervals.
+
+## Interpretation of the Coefficients
+
+The response was not transformed, so every coefficient is in writing-score points and no back-transformation is needed. Each interpretation holds the other predictors constant.
+
+* **math:** a one-point increase in math score goes with about a 0.24 point increase in writing score (95% records bootstrap CI: 0.11 to 0.37).
+* **science:** a one-point increase in science score goes with about a 0.24 point increase in writing score (CI: 0.12 to 0.37).
+* **socst:** a one-point increase in social studies score goes with about a 0.23 point increase in writing score (CI: 0.12 to 0.34).
+* **read:** a one-point increase in reading score goes with about a 0.13 point increase in writing score (CI: 0.01 to 0.24), but this one is borderline as discussed above.
+* **gender:** male students are predicted to score about 5.49 points lower in writing than female students with the same test scores (CI: 3.78 to 7.30 points lower). This is the largest effect in the model and it is very stable across all three methods.
+* **Intercept:** 11.63 is the predicted writing score of a female student with a score of 0 on all four other tests. This is outside the range of the data, so it is not meaningful on its own.
+
+These are associations, not causes. The data are observational, so we cannot say that raising a student's math score would raise their writing score.
+
+## Prediction Example
+
+As an example, we predict the writing score of a female student who scored 50 on reading, math, science, and social studies.
+
+```{r prediction}
+new.student <- data.frame(read = 50, math = 50, science = 50, socst = 50,
+                          gender = factor("female", levels = levels(hsb2$gender)))
+pred.pi <- predict(final.model, new.student, interval = "prediction", level = 0.95)
+pred.ci <- predict(final.model, new.student, interval = "confidence", level = 0.95)
+pred_tab <- rbind("95% prediction interval (one student)" = pred.pi,
+                  "95% confidence interval (average of all such students)" = pred.ci)
+kable(pred_tab, digits = 2, col.names = c("Predicted writing score (points)", "Lower", "Upper"),
+      caption = "Table 14: Predicted writing score for a female student with all four test scores equal to 50")
+```
+
+The model predicts a writing score of about 53.4 points. The 95% prediction interval is about 41.4 to 65.4, which means we would expect an individual student like this to score anywhere in that range. The confidence interval for the average is much narrower (52.2 to 54.5), since it only describes the mean of all students with these scores. The prediction interval is wide, about plus or minus 12 points, so the model is not very precise for a single student.
+
+# Summary and Discussion
+
+## Main Findings
+
+* Math, science, and social studies scores, and gender, are all reliably associated with writing score. Gender has the largest effect: male students score about 5.5 points lower than female students with the same test scores.
+* Reading score is positively associated with writing score in the raw data (r = 0.60), but once the other three test scores are in the model its effect is smaller and borderline (OLS p = 0.055). Automatic selection with AIC keeps it and BIC drops it, and the 95% intervals sit right at zero (OLS and the residual bootstrap just include it, the records bootstrap just excludes it). We treat it as suggestive but not conclusive evidence.
+* Race, socioeconomic status, school type, and program type were not needed. All three automatic selection methods removed them, and a joint F-test showed they add nothing significant (p = 0.271).
+* The regular regression and both bootstrap methods agree closely for four of the five predictors, so the regular inference is trustworthy here. The model explains about 60% of the variation in writing scores (R² = 0.602).
+* A Box-Cox transformation did not help, so we kept the response on the original scale.
+
+## Drawbacks and Future Improvements
+
+The residuals show a slight arch  that a transformation did not fix. A future model could try quadratic terms, interactions. We chose the variables first and then ran the bootstrap on the chosen model. That means the intervals do not account for the uncertainty in the selection step. A more careful approach would repeat the variable selection inside every bootstrap resample. The data are only 200 students from one survey and are observational, so the results are associations and may not apply to other groups of students or other years. About 40% of the variation in writing scores is not explained by the model. The four test scores are correlated with each other, which is why the effect of reading is hard to pin down. More data would help separate their effects.
+
+## Recommendations
+
+This model is useful for describing which factors go along with writing scores and for getting a rough estimate of a group's average writing score from its other test scores. We would not use it for important decisions about an individual student, because the prediction intervals are wide (about plus or minus 12 points). The size of the gender gap is worth further study, ideally with more data and other variables such as reading habits or course-taking that could explain it. When reporting the results, we recommend giving the OLS estimates along with the records bootstrap intervals and describing the reading effect as borderline.
