@@ -1,0 +1,552 @@
+---
+title: " Association between Survival and Passenger Characteristics on the Titanic: A Multiple Logistic Regression Analysis"
+author: "Joshua Xavier"
+date: "10-11-2026"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    fig_width: 4
+    fig_caption: yes
+    number_sections: yes
+    toc_collapsed: yes
+    code_folding: hide
+    code_download: yes
+    smooth_scroll: yes
+    theme: lumen
+  word_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    number_sections: yes
+    fig_width: 3
+    fig_height: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{=html}
+
+<style type="text/css">
+
+/* Cascading Style Sheets (CSS) is a stylesheet language used to describe the presentation of a document written in HTML or XML. it is a simple mechanism for adding style (e.g., fonts, colors, spacing) to Web documents. */
+
+h1.title {  /* Title - font specifications of the report title */
+  font-size: 24px;
+  color: DarkRed;
+  text-align: center;
+  font-family: "Gill Sans", sans-serif;
+}
+h4.author { /* Header 4 - font specifications for authors  */
+  font-size: 20px;
+  font-family: system-ui;
+  color: DarkRed;
+  text-align: center;
+}
+h4.date { /* Header 4 - font specifications for the date  */
+  font-size: 18px;
+  font-family: system-ui;
+  color: DarkBlue;
+  text-align: center;
+}
+h1 { /* Header 1 - font specifications for level 1 section title  */
+    font-size: 22px;
+    font-family: system-ui;
+    color: navy;
+    text-align: left;
+}
+h2 { /* Header 2 - font specifications for level 2 section title */
+    font-size: 20px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+
+h3 { /* Header 3 - font specifications of level 3 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+
+h4 { /* Header 4 - font specifications of level 4 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: darkred;
+    text-align: left;
+}
+
+body { background-color:white; }
+
+.highlightme { background-color:yellow; }
+
+p { background-color:white; }
+
+</style>
+```
+```{r setup, include=FALSE}
+# Detect, install and load packages if needed.
+if (!require("knitr")) {
+   install.packages("knitr")
+   library(knitr)
+}
+if (!require("MASS")) {
+   install.packages("MASS")
+   library(MASS)
+}
+if (!require("car")) {
+   install.packages("car")
+   library(car)
+}
+if (!require("scales")) {
+install.packages("scales")                                        
+library("scales") 
+}
+#
+# specifications of outputs of code in code chunks
+knitr::opts_chunk$set(echo = TRUE,      # include code chunk in the output file
+                      warnings = FALSE, # sometimes, you code may produce warning messages,
+                                        # you can choose to include the warning messages in
+                                        # the output file. 
+                      messages = FALSE, #
+                      results = TRUE,   # you can also decide whether to include the output
+                                        # in the output file.
+                      comment = NA      # remove leading ## in the model output
+                      )   
+library(tidyverse)
+library(knitr)
+library(tidyr)
+library(psych)
+library(VIM)
+library(dplyr)
+library(pander)
+library(broom)
+
+# helper so the p-values in my inline text print the APA way
+fmtp <- function(p) ifelse(p < .001, "< .001", paste0("= ", sub("^0", "", sprintf("%.3f", p))))
+
+```
+
+
+
+
+# Introduction and Data Description
+
+The sinking of the *Titanic* in April 1912 is one of the most studied disasters in statistics because the passenger records contain a clear binary outcome, survived or died, along with demographic and ticket information. On the *Titanic*, lifeboat access depended on where passengers were on the ship, and ticket price was closely tied to cabin location, passenger class, sex, age etc. All this is to say, survival was not completely random.
+
+In this Multiple Linear Regression Analysis, I use the Titanic data set and build a **multiple logistic regression model** to study the association between survival and several passenger characteristics. Previously using a simple logistic regression, I looked at the association between survival on the Titanic and the fare a passenger paid. Fare was a significant predictor, but it was weak and I suspected it was standing in for other factors like passenger class, sex and age. Ideally, this analysis will help answer some of those questions. The focus of this analysis is on **association analysis**.
+
+The data set contains 891 passengers.It is available in the seaborn-data repository on GitHub:
+
+<https://github.com/mwaskom/seaborn-data/blob/master/titanic.csv>
+
+The variables are:
+
+1. **survived**: Binary response, 1 = survived, 0 = died
+2. **pclass**: Ticket class (1 = upper, 2 = middle, 3 = lower), categorical 
+3. **sex**: Sex of the passenger, categorical
+4. **embarked**: Port of embarkation (C = Cherbourg, Q = Queenstown, S = Southampton), categorical
+5. **age**: Age in years, continuous
+6. **fare**: Fare paid, continuous
+7. **sibsp**: Number of siblings/spouses aboard, discrete count
+8. **parch**: Number of parents/children aboard, discrete count
+
+
+```{r data}
+titanic <- read.csv("https://raw.githubusercontent.com/Joshuaxav/STA321F26/main/titanic.csv",
+                    na.strings = c("", "NA"))      # treat blank cells as missing (embarked has blanks)
+names(titanic) <- tolower(names(titanic))          # safeguard in case column names are capitalized
+
+vars <- c("survived", "pclass", "sex", "age", "sibsp", "parch", "fare", "embarked")
+titanic0 <- titanic[, vars]                        # keep only the variables used in this analysis
+n.all <- nrow(titanic0)
+head(titanic0)
+```
+
+# Research Questions
+
+Which passenger characteristics are associated with the odds of surviving the sinking, and how strong is each association after accounting for the others? I will do this by checking if sex, ticket class, age, family size, port of embarkation, and fare are each associated with survival once the other variables are held constant. Along with this I will check if fare still matters after ticket class and the other variables are in the model. After checking that, I will find how large the associations are in terms of odds ratios for the variables that stay in the final model.
+
+# Data Management and Variable Inspection
+
+## Missing values
+
+```{r missing}
+miss <- colSums(is.na(titanic0))
+pander(data.frame(Variable = names(miss), Missing = as.numeric(miss),
+                  Percent = round(100 * as.numeric(miss) / n.all, 1)),
+       caption = "Missing values in the analysis variables")
+```
+
+Only **age** (`r miss["age"]` missing, `r round(100*miss["age"]/n.all, 1)`%) and **embarked** (`r miss["embarked"]` missing) have missing values. Before deleting the age records, I check whether the missingness looks random with respect to survival and class, since deleting them could bias the results if it doesn't.
+
+```{r miss-check}
+age.miss <- is.na(titanic0$age)
+miss.tab <- data.frame(Group = c("Age missing", "Age recorded"),
+                       n = c(sum(age.miss), sum(!age.miss)),
+                       Survival.rate = round(c(mean(titanic0$survived[age.miss]),
+                                               mean(titanic0$survived[!age.miss])), 3))
+pander(miss.tab, caption = "Survival rate by whether age is missing")
+pander(round(tapply(age.miss, titanic0$pclass, mean), 3),
+       caption = "Proportion of missing age by ticket class")
+miss.p <- chisq.test(table(age.miss, titanic0$survived))$p.value
+```
+
+Passengers with a missing age had a lower survival rate (`r miss.tab$Survival.rate[1]` vs. `r miss.tab$Survival.rate[2]`, chi-square test *p* `r fmtp(miss.p)`), and age is missing far more often in 3rd class than in 2nd class. So the age data is probably **not** missing completely at random. The usual fix would be imputation, but since this is an association analysis I use **complete-case analysis**.
+
+```{r complete}
+titan <- na.omit(titanic0)                         # complete cases
+n      <- nrow(titan)
+n.surv <- sum(titan$survived == 1)
+n.died <- sum(titan$survived == 0)
+n.drop <- n.all - n
+```
+
+After removing the records with missing values, the analytic data set has **`r n`** passengers (`r n.drop` deleted). Of these, **`r n.surv`** survived (`r round(100*n.surv/n, 1)`%) and **`r n.died`** died, so the response is reasonably balanced.
+
+## Variable types and dummy variables
+
+The ticket class `pclass` is stored as the numbers 1, 2, 3, but it is a category and not a quantity. Numerically coded categories have to be converted with `factor()`. I do the same for `pclass`, `sex`, and `embarked`. I also set the baseline level of each factor so that the odds ratios read naturally. Male for sex, 1st class for ticket class, and Southampton (the largest group) for port of embarkation.
+
+```{r factors}
+titan$pclass   <- factor(titan$pclass, levels = c(1, 2, 3), labels = c("1st", "2nd", "3rd"))
+titan$sex      <- factor(titan$sex, levels = c("male", "female"))
+titan$embarked <- factor(titan$embarked, levels = c("S", "C", "Q"))
+str(titan)
+```
+
+## Variable creation
+
+`sibsp` and `parch` both describe family aboard, and they are strongly related to each other. Rather than using them separately, I create a new variable, **family size**, which is the number of siblings and spouses ,plus parents and children, plus the passenger:
+
+$$\text{famsize} = \text{sibsp} + \text{parch} + 1$$
+
+```{r creation}
+titan$famsize <- titan$sibsp + titan$parch + 1
+```
+
+Family size is an exact linear combination of `sibsp` and `parch`, so all three can never be in the same model. I only use `famsize` in the models below.
+
+## Variable transformation
+
+Fare is extremely right-skewed, so I used the transformation **log(fare + 1)**. With skewness this extreme the untransformed fare is dominated by a few very large values, so I keep the transformation and interpret it as the effect of *doubling* the fare.
+
+```{r transformation, fig.width=8, fig.height=4, fig.cap="Figure 1: Fare vs. log(Fare + 1) histogram"}
+titan$logfare <- log(titan$fare + 1)
+par(mfrow = c(1, 2))
+hist(titan$fare, probability = TRUE, main = "Fare", xlab = "Fare", col = "azure1", border = "lightseagreen")
+lines(density(titan$fare, adjust = 2), col = "blue")
+hist(titan$logfare, probability = TRUE, main = "log(Fare + 1)", xlab = "log(Fare + 1)", col = "azure1", border = "lightseagreen")
+lines(density(titan$logfare, adjust = 2), col = "blue")
+par(mfrow = c(1, 1))
+```
+
+## Pairwise relationships among the numerical variables
+
+```{r pairs, fig.width=7, fig.height=7, fig.cap="Figure 2: Pairwise scatter plots and correlations of the numerical variables"}
+pairs.panels(titan[, c("age", "logfare", "sibsp", "parch", "famsize")],
+             method = "pearson",
+             hist.col = "#00AFBB",
+             density = TRUE,
+             ellipses = TRUE)
+```
+
+```{r cor-vals, include=FALSE}
+r.sp.fam <- cor(titan$sibsp, titan$famsize)
+r.pa.fam <- cor(titan$parch, titan$famsize)
+r.cls.fare <- cor(as.numeric(titan$pclass), titan$logfare)
+r.age.fam <- cor(titan$age, titan$famsize)
+```
+
+* `famsize` is highly correlated with both `sibsp` (*r* = `r round(r.sp.fam, 2)`) and `parch` (*r* = `r round(r.pa.fam, 2)`), which is expected because it is built from them.
+* Age and family size are moderately negatively correlated (*r* = `r round(r.age.fam, 2)`), since young children travel with their parents and siblings.
+
+
+## Variable discretization
+
+Age is not skewed, but the effect of age on survival is unlikely to be linear since children were given priority for lifeboats while the effect for adults is probably flatter. To deal with this, I discretize age into meaningful groups, which makes the odds ratios easier to interpret.
+
+```{r age-groups, fig.width=5, fig.height=4, fig.cap="Figure 3: Survival rate by age group"}
+titan$grp.age <- cut(titan$age, breaks = c(0, 13, 36, 60, Inf), right = FALSE,
+                     labels = c("0-12", "13-35", "36-59", "60+"))
+titan$grp.age <- relevel(titan$grp.age, ref = "13-35")      # largest group is the baseline
+
+rate.tab <- function(x) {
+  data.frame(Group = names(table(x)),
+             n = as.numeric(table(x)),
+             Survival.rate = round(as.numeric(tapply(titan$survived, x, mean)), 3))
+}
+age.tab <- rate.tab(titan$grp.age)
+pander(age.tab, caption = "Sample size and survival rate by age group")
+barplot(tapply(titan$survived, titan$grp.age, mean), ylim = c(0, 1), col = "azure1",
+        border = "lightseagreen", xlab = "Age group", ylab = "Proportion survived")
+```
+
+The groups are: 0-12 (children), 13-35 (young adults, the baseline), 36-59 (middle aged), and 60+ (older). Children have by far the highest survival rate and the rate falls with age after that.
+
+## Sparse categories
+
+Before grouping the family variables, I look at how thin the categories are.
+
+```{r sparse}
+pander(rate.tab(factor(titan$famsize)), caption = "Family size (original): sample size and survival rate")
+pander(table(Siblings.Spouses = titan$sibsp), caption = "Distribution of sibsp")
+pander(table(Parents.Children = titan$parch), caption = "Distribution of parch")
+```
+
+Family size has 9 distinct values, and the larger ones (5, 6, 7, 8, 11) each have very few passengers. Using each value as its own dummy variable would produce unstable estimates with huge standard errors. From the table, passengers traveling **alone** (size 1) have a low survival rate, **small families** (2 to 4) have a higher rate, and **large families** (5 or more) have a very low rate. I group family size accordingly.
+
+```{r fam-groups}
+titan$grp.fam <- cut(titan$famsize, breaks = c(0, 1, 4, Inf), labels = c("alone", "2-4", "5+"))
+fam.tab <- rate.tab(titan$grp.fam)
+pander(fam.tab, caption = "Sample size and survival rate by grouped family size")
+```
+
+The other categorical variables I checked for sparseness:
+
+```{r other-cats}
+pander(rate.tab(titan$sex), caption = "Sex")
+pander(rate.tab(titan$pclass), caption = "Ticket class")
+pander(rate.tab(titan$embarked), caption = "Port of embarkation")
+```
+
+```{r cat-plot, fig.width=9, fig.height=3.5, fig.cap="Figure 4: Survival rate by sex, ticket class, and port of embarkation"}
+par(mfrow = c(1, 3))
+for (v in c("sex", "pclass", "embarked")) {
+  barplot(tapply(titan$survived, titan[[v]], mean), ylim = c(0, 1), col = "azure1",
+          border = "lightseagreen", main = paste("Survival rate by", v), ylab = "Proportion survived")
+}
+par(mfrow = c(1, 1))
+```
+
+None of these are sparse, since every group has enough passengers. The smallest groups are Queenstown (`r sum(titan$embarked == "Q")` passengers) and the 60+ age group (`r sum(titan$grp.age == "60+")` passengers). The 60+ group is the thinnest, so I expect a wide confidence interval for it. Survival differs a lot by sex and ticket class and a little by port.
+
+# Model Building
+
+Predictors considered are: `sex`, `pclass`, `embarked`, `grp.age`, `logfare`, and `grp.fam`. (I leave out `sibsp`, `parch`, and the continuous `age` and `famsize` because their grouped or combined versions are used instead.)
+
+## Candidate model 1: the full model
+
+```{r full}
+full.model <- glm(survived ~ sex + pclass + embarked + grp.age + logfare + grp.fam,
+                  family = binomial(link = "logit"),   # logit(p) = log(p/(1-p))
+                  data = titan)
+pander(summary(full.model)$coef, caption = "Summary of inferential statistics of the full model")
+```
+
+```{r epp, include=FALSE}
+n.par <- length(coef(full.model)) - 1                   # number of slope parameters
+epp   <- min(n.surv, n.died) / n.par                    # events per parameter
+```
+
+The full model has `r n.par` slope parameters. The smaller outcome group has `r min(n.surv, n.died)` passengers, which gives about **`r round(epp, 1)` events per parameter**, comfortably above the common 10 to 15 guideline, so the sample is large enough to fit this model without worrying about unstable estimates.
+
+I check the generalized variance inflation factors (GVIF) for the full model to check for multicollinearity. For terms with more than one degree of freedom, the GVIF^(1/(2*Df)) column is the one that is comparable across terms.
+
+```{r vif}
+vif.full <- vif(full.model)
+pander(round(vif.full, 3), caption = "GVIF of the full model")
+gv <- vif.full[, "GVIF^(1/(2*Df))"]
+```
+
+The largest GVIF^(1/(2*Df)) is `r round(max(gv), 2)` (for `r names(which.max(gv))`), and the largest raw GVIF is `r round(max(vif.full[, "GVIF"]), 2)`. `r ifelse(max(vif.full[, "GVIF"]) < 5, "All raw GVIF values are below 5, so there is no serious multicollinearity problem, although the class and log fare terms share information (they are correlated at the level mentioned above), which could inflate the standard error of log fare.", "At least one GVIF is above 5, so there is a multicollinearity concern, most likely involving ticket class and log fare, which are strongly correlated.")`
+
+## Candidate model 2: the reduced model
+
+In applied work, variables that are known to be important are forced into the model even if the data would say otherwise. Based on the history of the disaster (the "women and children first" boarding policy, and the fact that lifeboat access depended on which deck a passenger's cabin was on), **sex** and **ticket class** are treated as essential risk factors. These two define the minimal model.
+
+```{r reduced}
+reduced.model <- glm(survived ~ sex + pclass,
+                     family = binomial(link = "logit"),
+                     data = titan)
+pander(summary(reduced.model)$coef, caption = "Summary of inferential statistics of the reduced model")
+```
+
+## Manual variable selection
+
+For the manual approach, I use backward elimination based on likelihood ratio tests. `drop1()` removes each term in turn from the full model (all dummy variables of a factor are removed together) and tests whether the drop in fit is significant. I then remove the term with the largest *p*-value, refit, and repeat until every remaining term is significant at 0.05.
+
+```{r drop1-full}
+d1.full <- drop1(full.model, test = "Chisq")
+pander(as.data.frame(d1.full), caption = "Likelihood ratio tests for dropping each term from the full model")
+```
+
+```{r manual}
+manual.model <- full.model
+step.log <- NULL
+repeat {
+  d1 <- drop1(manual.model, test = "Chisq")
+  pv <- d1[["Pr(>Chi)"]][-1]                            # drop the <none> row
+  names(pv) <- rownames(d1)[-1]
+  if (max(pv) <= 0.05) break                            # stop when everything left is significant
+  worst <- names(which.max(pv))
+  step.log <- rbind(step.log, data.frame(Term.removed = worst, LRT.p.value = round(max(pv), 4)))
+  manual.model <- update(manual.model, as.formula(paste(". ~ . -", worst)))
+}
+pander(step.log, caption = "Terms removed in manual backward elimination (in order)")
+manual.terms <- attr(terms(manual.model), "term.labels")
+```
+
+```{r drop1-vals, include=FALSE}
+p.embarked <- d1.full["embarked", "Pr(>Chi)"]
+p.logfare  <- d1.full["logfare", "Pr(>Chi)"]
+p.sex      <- d1.full["sex", "Pr(>Chi)"]
+p.pclass   <- d1.full["pclass", "Pr(>Chi)"]
+p.grpage   <- d1.full["grp.age", "Pr(>Chi)"]
+p.grpfam   <- d1.full["grp.fam", "Pr(>Chi)"]
+```
+
+In the full model, sex (*p* `r fmtp(p.sex)`), ticket class (*p* `r fmtp(p.pclass)`), age group (*p* `r fmtp(p.grpage)`), and family size group (*p* `r fmtp(p.grpfam)`) are significant, while port of embarkation (*p* `r fmtp(p.embarked)`) and log fare (*p* `r fmtp(p.logfare)`) are not. The manual elimination ends with: **`r paste(manual.terms, collapse = " + ")`**.
+
+## Automatic variable selection
+
+For the automatic approach I use `stepAIC()`, which adds or removes terms based on AIC. I run it in two directions, **forward** from the reduced model (so sex and class are always kept) with the full model as the upper limit, and **backward** from the full model with the reduced model as the lower limit.
+
+```{r auto}
+auto.forward <- stepAIC(reduced.model,
+                        scope = list(lower = formula(reduced.model), upper = formula(full.model)),
+                        direction = "forward",           # forward selection
+                        trace = 0)                       # do not show the details
+auto.backward <- stepAIC(full.model,
+                         scope = list(lower = formula(reduced.model), upper = formula(full.model)),
+                         direction = "backward",         # backward elimination
+                         trace = 0)
+pander(as.data.frame(auto.forward$anova), caption = "Forward selection path")
+pander(as.data.frame(auto.backward$anova), caption = "Backward elimination path")
+
+fwd.terms <- attr(terms(auto.forward), "term.labels")
+bwd.terms <- attr(terms(auto.backward), "term.labels")
+same.models <- setequal(fwd.terms, bwd.terms) && setequal(fwd.terms, manual.terms)
+```
+
+Forward selection ends with **`r paste(fwd.terms, collapse = " + ")`** and backward elimination ends with **`r paste(bwd.terms, collapse = " + ")`**. `r ifelse(same.models, "Both automatic procedures and the manual elimination arrive at the same model, which gives me more confidence that this is a good choice", "The procedures do not all agree, so I compare the candidates below before choosing.")`
+
+## Performance comparison and final model
+
+The global goodness-of-fit measures (residual deviance and AIC) are used here. A lower AIC indicates a better balance of fit and complexity.
+
+```{r compare}
+global.measure <- function(m) {
+  cbind(Num.Parameters = length(coef(m)),
+        Deviance.residual = m$deviance,
+        Null.Deviance.Residual = m$null.deviance,
+        AIC = m$aic)
+}
+goodness <- rbind(global.measure(full.model),
+                  global.measure(reduced.model),
+                  global.measure(manual.model),
+                  global.measure(auto.forward),
+                  global.measure(auto.backward))
+row.names(goodness) <- c("full.model", "reduced.model", "manual.model", "auto.forward", "auto.backward")
+pander(goodness, caption = "Comparison of global goodness-of-fit statistics (for model selection only)")
+```
+
+```{r lrt-vals, include=FALSE}
+# LRT: auto-selected model vs. full model (is anything lost by dropping the extra terms?)
+lrt.fs    <- auto.forward$deviance - full.model$deviance
+df.fs     <- auto.forward$df.residual - full.model$df.residual
+p.fs      <- pchisq(lrt.fs, df = df.fs, lower.tail = FALSE)
+# LRT: reduced model vs. auto-selected model (are the added terms worth it?)
+lrt.rf    <- reduced.model$deviance - auto.forward$deviance
+df.rf     <- reduced.model$df.residual - auto.forward$df.residual
+p.rf      <- pchisq(lrt.rf, df = df.rf, lower.tail = FALSE)
+aic.full  <- full.model$aic
+aic.red   <- reduced.model$aic
+aic.auto  <- auto.forward$aic
+```
+
+* The **reduced model** has the highest AIC (`r round(aic.red, 1)`), so it is underfitted. It misses important effects. The LRT comparing it with the auto-selected model is highly significant ($\chi^2$(`r df.rf`) = `r round(lrt.rf, 2)`, *p* `r fmtp(p.rf)`), so the age and family size terms are worth adding.
+* The **auto-selected model** has the lowest AIC (`r round(aic.auto, 1)`), lower than the **full model** (`r round(aic.full, 1)`).
+* To confirm formally that nothing important is lost by dropping the extra terms, I compared the auto-selected model with the full model using a likelihood ratio chi-square test:
+
+$$G^2 = \text{Residual Deviance}_{\text{auto.selected}} - \text{Residual Deviance}_{\text{full}} = `r round(auto.forward$deviance, 1)` - `r round(full.model$deviance, 1)` = `r round(lrt.fs, 2)`,\quad df = `r df.fs`$$
+
+$$\text{p-value} = P(\chi^2_{`r df.fs`} > `r round(lrt.fs, 2)`) = `r round(p.fs, 4)`$$
+
+Since the *p*-value is large, the two models are not statistically different, so the dropped terms (`embarked` and `logfare`) don't add useful information. In accordance with the principle of parsimony, I choose the **auto-selected model** as my final model.
+
+```{r final-model}
+final.model <- auto.forward
+```
+
+# Final Model
+
+The final model is the auto selected model which includes sex, ticket class, age group, and the family size group. Port of embarkation and log fare were dropped. The inferential statistics are below, with odds ratios and their 95% profile-likelihood confidence intervals.
+
+```{r final-table}
+model.coef.stats <- summary(final.model)$coef
+conf.ci <- confint(final.model)                         # profile-likelihood CI of the betas
+odds.ratio <- exp(coef(final.model))
+out.stats <- cbind(model.coef.stats,
+                   odds.ratio = odds.ratio,
+                   OR.lower = exp(conf.ci[, 1]),
+                   OR.upper = exp(conf.ci[, 2]))
+pander(out.stats, caption = "Summary of the final model with odds ratios and 95% confidence intervals")
+```
+
+Because every categorical predictor except sex has more than two levels, the individual *z* tests only compare each level with its baseline. The tests below (likelihood ratio tests from `drop1()`) show whether each variable as a whole is associated with survival:
+
+```{r final-drop1}
+d1.final <- drop1(final.model, test = "Chisq")
+pander(as.data.frame(d1.final), caption = "Likelihood ratio test for each term in the final model")
+```
+
+```{r final-vals, include=FALSE}
+or <- odds.ratio
+ci <- exp(conf.ci)
+pct.lower <- function(x) round(100 * (1 - x))           # percent decrease in odds for an OR < 1
+pf <- function(p) fmtp(p)
+p.fin.sex <- d1.final["sex", "Pr(>Chi)"]
+p.fin.cls <- d1.final["pclass", "Pr(>Chi)"]
+p.fin.age <- d1.final["grp.age", "Pr(>Chi)"]
+p.fin.fam <- d1.final["grp.fam", "Pr(>Chi)"]
+pz <- model.coef.stats[, "Pr(>|z|)"]
+```
+
+## Interpretation of the odds ratios
+
+Each odds ratio is the multiplicative change in the odds of survival comparing a category with its baseline, **holding the other variables in the model constant**.
+
+* **Sex** (*p* `r fmtp(p.fin.sex)`): The odds of survival for women are about **`r round(or["sexfemale"], 1)` times** the odds for men with the same ticket class, age group, and family size (95% CI [`r round(ci["sexfemale", 1], 1)`, `r round(ci["sexfemale", 2], 1)`]). This is by far the strongest association in the model.
+* **Ticket class** (*p* `r fmtp(p.fin.cls)`): Compared with 1st class, the odds of survival were `r pct.lower(or["pclass2nd"])`% lower in 2nd class (OR = `r round(or["pclass2nd"], 3)`, 95% CI [`r round(ci["pclass2nd", 1], 3)`, `r round(ci["pclass2nd", 2], 3)`]) and `r pct.lower(or["pclass3rd"])`% lower in 3rd class (OR = `r round(or["pclass3rd"], 3)`, 95% CI [`r round(ci["pclass3rd", 1], 3)`, `r round(ci["pclass3rd", 2], 3)`]). Said the other way, 1st class passengers had about `r round(1/or["pclass3rd"], 1)` times the odds of survival of 3rd class passengers with the same sex, age group, and family size.
+* **Age group** (*p* `r fmtp(p.fin.age)`): Compared with passengers aged 13 to 35, children aged 0 to 12 had about **`r round(or["grp.age0-12"], 1)` times** the odds of survival (95% CI [`r round(ci["grp.age0-12", 1], 1)`, `r round(ci["grp.age0-12", 2], 1)`]). Passengers aged 36 to 59 had `r pct.lower(or["grp.age36-59"])`% lower odds (OR = `r round(or["grp.age36-59"], 3)`), and passengers aged 60 and over had `r pct.lower(or["grp.age60+"])`% lower odds (OR = `r round(or["grp.age60+"], 3)`, 95% CI [`r round(ci["grp.age60+", 1], 3)`, `r round(ci["grp.age60+", 2], 3)`]). The 60+ interval is wide because that group is small.
+* **Family size** (*p* `r fmtp(p.fin.fam)`): Compared with passengers traveling alone, passengers in families of 2 to 4 had essentially the same odds (OR = `r round(or["grp.fam2-4"], 3)`, 95% CI [`r round(ci["grp.fam2-4", 1], 3)`, `r round(ci["grp.fam2-4", 2], 3)`], *p* `r fmtp(pz["grp.fam2-4"])`), but passengers in families of 5 or more had `r pct.lower(or["grp.fam5+"])`% lower odds of survival (OR = `r round(or["grp.fam5+"], 3)`, 95% CI [`r round(ci["grp.fam5+", 1], 3)`, `r round(ci["grp.fam5+", 2], 3)`]). The 2-4 level on its own is not significant, but the variable as a whole is, because of the 5+ group.
+* **Intercept:** The intercept (odds = `r round(or["(Intercept)"], 2)`) is the odds of survival for the baseline passenger (a man, in 1st class, aged 13 to 35, traveling alone). On its own it's not very meaningful to interpret.
+
+One caution when reading these results: an odds ratio is not a relative risk. Survival is not rare in this data set (`r round(100*n.surv/n)`%), so an odds ratio of `r round(or["sexfemale"], 1)` does not mean women were `r round(or["sexfemale"], 1)` times as likely to survive, only that their *odds* were that much higher.
+
+
+## Interaction between Sex and Ticket Class
+
+The odds ratios above assume the effect of sex is the same in every ticket class (and vice versa). Looking at the raw survival rates, that is questionable:
+
+```{r interaction}
+pander(round(tapply(titan$survived, list(Sex = titan$sex, Class = titan$pclass), mean), 3),
+       caption = "Survival rate by sex and ticket class")
+int.model <- update(final.model, . ~ . + sex:pclass)
+int.anova <- anova(final.model, int.model, test = "Chisq")
+p.int <- int.anova[2, "Pr(>Chi)"]
+lrt.int <- int.anova[2, "Deviance"]
+```
+
+A likelihood ratio test of adding the sex by class interaction gives $\chi^2$(2) = `r round(lrt.int, 2)`, *p* `r fmtp(p.int)`. The interaction is significant, which means the advantage women had over men was not the same in all classes (it was much larger in 1st and 2nd class than in 3rd class, as the table shows). The main effect odds ratios in the final model should therefore be read as **averages across the classes**. The analysis is focused on main-effect association analysis, so I keep the main-effects model as the final model, but a follow-up analysis should include this interaction.
+
+# Conclusion and Discussion
+
+This report studied the association between survival on the *Titanic* and several passenger characteristics with a multiple logistic regression. Data cleanup included deleting records with a missing age or port (`r n.drop` passengers, leaving `r n`), converting ticket class, sex, and port to factors, creating a family size variable from `sibsp` and `parch`, log-transforming the skewed fare, discretizing age, and grouping the sparse family size categories. I fit a full model and a reduced model (sex and class forced in), then used manual backward elimination and automatic forward/backward selection with AIC. `r ifelse(same.models, "All three selection approaches agreed on the same final model", "The selection approaches were compared and the auto-selected model was chosen")`, which contains **sex, ticket class, age group, and family size group**.
+
+The main findings (all holding the other variables constant):
+
+1. **Sex** has the strongest association. The odds of survival for women were about `r round(or["sexfemale"], 1)` times those for men.
+2. **Ticket class** is strongly associated. Compared with 1st class, the odds were `r pct.lower(or["pclass2nd"])`% lower in 2nd class and `r pct.lower(or["pclass3rd"])`% lower in 3rd class.
+3. **Age** matters. Children under 13 had about `r round(or["grp.age0-12"], 1)` times the odds of young adults, while older passengers had lower odds.
+4. **Family size** matters only at the high end. Passengers in families of 5 or more had `r pct.lower(or["grp.fam5+"])`% lower odds of survival than passengers traveling alone, while families of 2 to 4 were no different from solo travelers.
+5. **Port of embarkation and fare** were not associated with survival once the other variables were in the model. Fare's apparent effect in the simple model last week was mainly due to ticket class.
+
+**Limitations.** First, this is an observational analysis, so the results describe associations and not causes. Second, I used complete-case analysis even though the age data are not missing completely at random (passengers with a missing age had lower survival and were more often in 3rd class), so the results apply most directly to passengers whose age was recorded. Third, the sex by class interaction is significant, so the main-effect odds ratios are averages and hide differences between classes. Fourth, the 60+ age group is small, so its odds ratio has a wide confidence interval. A natural next step is to add the interaction to the model, and to use the final model for classification and prediction in the next module.
