@@ -1,0 +1,422 @@
+---
+title: "Predicting Survival on the Titanic with Logistic Regression: A Predictive Modeling Case Study"
+author: "Joshua Xavier"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    fig_width: 6
+    fig_height: 4
+    fig_caption: yes
+    number_sections: yes
+    toc_collapsed: yes
+    code_folding: hide
+    code_download: yes
+    smooth_scroll: yes
+    theme: lumen
+  word_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    number_sections: yes
+    fig_width: 5
+    fig_height: 4
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{=html}
+
+<style type="text/css">
+
+h1.title {  /* Title - font specifications of the report title */
+  font-size: 24px;
+  color: DarkRed;
+  text-align: center;
+  font-family: "Gill Sans", sans-serif;
+}
+h4.author { /* Header 4 - font specifications for authors  */
+  font-size: 20px;
+  font-family: system-ui;
+  color: DarkRed;
+  text-align: center;
+}
+h4.date { /* Header 4 - font specifications for the date  */
+  font-size: 18px;
+  font-family: system-ui;
+  color: DarkBlue;
+  text-align: center;
+}
+h1 { /* Header 1 - font specifications for level 1 section title  */
+    font-size: 22px;
+    font-family: system-ui;
+    color: navy;
+    text-align: left;
+}
+h2 { /* Header 2 - font specifications for level 2 section title */
+    font-size: 20px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+h3 { /* Header 3 - font specifications of level 3 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+h4 { /* Header 4 - font specifications of level 4 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: darkred;
+    text-align: left;
+}
+body { background-color:white; }
+.highlightme { background-color:yellow; }
+p { background-color:white; }
+
+</style>
+```
+```{r setup, include=FALSE}
+# Detect, install and load packages if needed.
+for (pkg in c("knitr", "pander", "psych", "car", "pROC", "scales", "tidyverse", "MASS")) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+# NOTE: MASS is loaded last so that stepAIC() is available. MASS::select() masks
+# dplyr::select(), so I never call select() in this report.
+
+knitr::opts_chunk$set(echo = TRUE,      # include code chunk in the output file
+                      warning = FALSE,  # do not print warnings in the output file
+                      message = FALSE,  # do not print package messages in the output file
+                      results = TRUE,
+                      comment = NA      # remove leading ## in the output
+                      )
+
+# helper so the p-values in my inline text print the APA way
+fmtp <- function(p) ifelse(p < .001, "< .001", paste0("= ", sub("^0", "", sprintf("%.3f", p))))
+```
+
+# Introduction
+
+The sinking of the *Titanic* in April 1912 is one of the most studied disasters in statistics because the passenger records contain a clear binary outcome, survived or died, along with demographic and ticket information. 
+
+I started with a simple logistic regression on fare, and then built a multiple logistic regression with sex, ticket class, age, and family size. That work was about *explaining* survival, so the focus was on the odds ratios and their interpretation.
+
+In this project I use logistic regression as a **predictive algorithm**. That is, given a passenger's characteristics, can I predict whether that passenger survived, and how well will the model do on passengers it has never seen? To achieve this I use a **training/testing split**,and a **10-fold cross-validation** to choose from different candidate models, and **ROC analysis** (AUC) as a another check on the models. The final model is then evaluated using withheld test data.
+
+# Description of Data and Variables
+
+## Data collection
+
+The data set has records for 891 *Titanic* passengers. I use the copy in the seaborn-data repository on GitHub:
+
+<https://github.com/mwaskom/seaborn-data/blob/master/titanic.csv>
+
+It is a passenger-level list compiled from historical passenger records and is widely distributed online.
+
+## Variables
+
+1. **survived**: Binary response, 1 = survived, 0 = died
+2. **pclass**: Ticket class (1 = upper, 2 = middle, 3 = lower), categorical
+3. **sex**: Sex of the passenger, categorical
+4. **embarked**: Port of embarkation (C = Cherbourg, Q = Queenstown, S = Southampton), categorical
+5. **age**: Age in years, continuous
+6. **fare**: Fare paid, continuous
+7. **sibsp**: Number of siblings/spouses aboard, discrete count
+8. **parch**: Number of parents/children aboard, discrete count
+
+```{r data}
+titanic <- read.csv("https://raw.githubusercontent.com/Joshuaxav/STA321F26/main/titanic.csv",
+                    na.strings = c("", "NA"))      # treat blank cells as missing
+names(titanic) <- tolower(names(titanic))
+
+vars <- c("survived", "pclass", "sex", "age", "sibsp", "parch", "fare", "embarked")
+titanic0 <- titanic[, vars]                        # keep only the variables used in this analysis
+n.all <- nrow(titanic0)
+miss <- colSums(is.na(titanic0))
+head(titanic0)
+```
+
+Only **age** (`r miss["age"]` missing, `r round(100*miss["age"]/n.all, 1)`%) and **embarked** (`r miss["embarked"]` missing) have missing values. To address this issue, I deleted the records with missing values.
+
+```{r complete}
+titan <- na.omit(titanic0)
+n      <- nrow(titan)
+n.surv <- sum(titan$survived == 1)
+n.died <- sum(titan$survived == 0)
+```
+
+The analytic data set has **`r n`** passengers (`r n.all - n` deleted). Of these, `r n.surv` survived (`r round(100*n.surv/n, 1)`%) and `r n.died` died, so the response is reasonably balanced.
+
+# Research Question
+
+The objective of this analysis is to build a logistic regression model that **predicts whether a passenger survived the sinking** using the passenger's sex, ticket class, age, family size, fare, and port of embarkation. To do this I will first find which candidate logistic model has the best predictive preformance when judged by cross-validation and ROC analysis. Then I will check how accurately the selected model classifys passengers it has never seen.
+
+
+# Variable Transformation and Discretization
+
+## Variable types
+
+The ticket class `pclass` is stored as the numbers 1, 2, 3, but it is a category and not a quantity, so I convert it, along with `sex` and `embarked`, to factors. The baseline levels are male, 1st class, and Southampton. The response is also a factor. I use the labels "died" and "survived", with "survived" as the second level, so `glm()` models the probability of surviving.
+
+```{r factors}
+titan$pclass   <- factor(titan$pclass, levels = c(1, 2, 3), labels = c("1st", "2nd", "3rd"))
+titan$sex      <- factor(titan$sex, levels = c("male", "female"))
+titan$embarked <- factor(titan$embarked, levels = c("S", "C", "Q"))
+titan$survived <- factor(titan$survived, levels = c(0, 1), labels = c("died", "survived"))
+```
+
+## Variable creation
+
+`sibsp` and `parch` both describe family aboard, and they are strongly related to each other, so I combined them into one variable: **family size** = `sibsp` + `parch` + 1. Because of this, `sibsp` and `parch` are not used as separate predictors.
+
+```{r creation}
+titan$famsize <- titan$sibsp + titan$parch + 1
+```
+
+## Exploratory analysis of the numerical variables
+
+I made pairwise scatter plots to look for potential issues with the numerical predictors. Fare is extremely right-skewed, so I use **log(fare + 1)**
+
+```{r pairs, fig.width=7, fig.height=7, fig.cap="Pairwise scatter plots and correlations of the numerical variables"}
+titan$logfare <- log(titan$fare + 1)
+pairs.panels(titan[, c("age","fare", "logfare", "sibsp", "parch", "famsize")],
+             method = "pearson",       # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,           # show density plots
+             ellipses = TRUE)          # show correlation ellipses
+```
+
+```{r cor-vals, include=FALSE}
+sk <- function(x) mean((x - mean(x))^3) / (mean((x - mean(x))^2))^1.5
+sk.fare <- sk(titan$fare); sk.logfare <- sk(titan$logfare)
+r.age.fam <- cor(titan$age, titan$famsize)
+r.cls.fare <- cor(as.numeric(titan$pclass), titan$logfare)
+```
+
+From the plot I see that fare is extremely skewed (skewness = `r round(sk.fare, 2)`), while log(fare + 1) is much more symmetric (skewness = `r round(sk.logfare, 2)`), so I use the log version.`famsize` is also strongly correlated with `sibsp` and `parch` because it is built from them, which is why I use only `famsize`. Age and family size are moderately negatively correlated (*r* = `r round(r.age.fam, 2)`), and ticket class and log fare are strongly negatively correlated (*r* = `r round(r.cls.fare, 2)`, since class 1 has the highest fares). I keep both pairs of variables in the candidate models.
+
+## Variables I standardize
+
+Since this is a predictive model, I don't need the coefficients to be on an interpretable scale. The one numerical predictor kept in its numerical form is the log-transformed fare, and I standardized it:
+
+* **sd.logfare** = (log(fare + 1) - mean) / SD
+
+```{r standardize}
+titan$sd.logfare <- (titan$logfare - mean(titan$logfare)) / sd(titan$logfare)
+```
+
+
+## Variables I discretize
+
+Age and family size are not expected to have a linear effect on survival since children were given priority for lifeboats, and very large families did poorly. I discretize both. The table shows the survival rate in each group, and none of the groups is too sparse.
+
+```{r discretize}
+titan$grp.age <- cut(titan$age, breaks = c(0, 13, 36, 60, Inf), right = FALSE,
+                     labels = c("0-12", "13-35", "36-59", "60+"))
+titan$grp.age <- relevel(titan$grp.age, ref = "13-35")      # largest group is the baseline
+titan$grp.fam <- cut(titan$famsize, breaks = c(0, 1, 4, Inf), labels = c("alone", "2-4", "5+"))
+
+rate.tab <- function(x) {
+  data.frame(Group = names(table(x)),
+             n = as.numeric(table(x)),
+             Survival.rate = round(as.numeric(tapply(titan$survived == "survived", x, mean)), 3))
+}
+pander(rate.tab(titan$grp.age), caption = "Age group: sample size and survival rate")
+pander(rate.tab(titan$grp.fam), caption = "Family size group: sample size and survival rate")
+```
+
+* **grp.age**: 0-12, 13-35 (baseline), 36-59, and 60+
+* **grp.fam**: alone (size 1), 2-4, and 5 or more
+
+## The analytic data set
+
+I drop all of the original variables that were transformed, combined, or discretized, and keep only the response and the predictors that will be used in the models.
+
+```{r analytic}
+sd.titan <- titan[, c("survived", "sex", "pclass", "embarked", "grp.age", "grp.fam", "sd.logfare")]
+str(sd.titan)
+```
+
+# Data Split - Training and Testing Data
+
+I **randomly** split the data into two subsets: **80%** of the passengers form the **training data** and the remaining **20%** form the **testing data**. The training data are used to build the candidate models, validate them with cross-validation, and select the final model. The test data are not touched until the very end, and are used only once, to report the actual performance of the final model. A seed is set so the split can be reproduced.
+
+```{r split}
+set.seed(321)
+train.n  <- round(0.8 * n)
+train.id <- sample(1:n, train.n, replace = FALSE)
+train <- sd.titan[train.id, ]
+test  <- sd.titan[-train.id, ]
+split.tab <- data.frame(Data = c("Training", "Testing"),
+                        n = c(nrow(train), nrow(test)),
+                        Percent.survived = round(100 * c(mean(train$survived == "survived"),
+                                                         mean(test$survived == "survived")), 1))
+pander(split.tab, caption = "Sample size and percent survived in the training and testing data")
+```
+
+The split has `r nrow(train)` training and `r nrow(test)` testing passengers. The percent survived is similar in the two sets, so the response is not badly unbalanced between them.
+
+# Candidate Models
+
+I use three kinds of candidate models:
+
+1. **Full model**: all six predictors, `sex + pclass + embarked + grp.age + sd.logfare + grp.fam`.
+2. **Reduced model**: only `sex + pclass`. These two were forced in as the essential risk factors (the "women and children first" policy and lifeboat access by class).
+3. **Stepwise model**: forward selection by AIC (`stepAIC()`), starting from the reduced model with the full model as the upper limit.
+
+```{r candidates}
+f.full <- survived ~ sex + pclass + embarked + grp.age + sd.logfare + grp.fam
+f.red  <- survived ~ sex + pclass
+```
+
+The stepwise model has to be re-selected on each set of data it is fit to. Inside the cross-validation below, I repeat the stepwise search within every training fold so that the validation fold never influences the variable selection. I also fit all three models to the entire training set.
+
+```{r candidates-fit}
+m.full <- glm(f.full, family = binomial(link = "logit"), data = train)
+m.red  <- glm(f.red,  family = binomial(link = "logit"), data = train)
+m.step <- stepAIC(m.red,
+                  scope = list(lower = formula(m.red), upper = formula(m.full)),
+                  direction = "forward",     # forward selection
+                  trace = 0)                 # do not show the details
+step.terms <- attr(terms(m.step), "term.labels")
+```
+
+On the entire training set, the stepwise search ends with **`r paste(step.terms, collapse = " + ")`**, `r ifelse(setequal(step.terms, c("sex", "pclass", "grp.age", "grp.fam")), "so embarked and sd.logfare are not added.")`
+
+# Final Model Selection
+
+## Cross-validation
+
+I use **10-fold cross-validation** on the training data only. The training data is randomly divided into 10 folds of about the same size. Each fold takes a turn as the validation set while the three candidate models are fit to the other nine folds. Each fitted model predicts the validation fold, and the **prediction error (PE)** is the proportion of misclassified passengers. Following the class case study, I use the common cut-off probability of **0.5** for all three candidate models since a passenger is predicted to survive if the predicted probability is greater than 0.5. The average PE over the 10 folds is the score of each candidate.
+
+```{r cv}
+k <- 10
+cutoff <- 0.5
+fold <- sample(rep(1:k, length.out = nrow(train)))        # random fold assignment
+PE <- matrix(NA, nrow = k, ncol = 3, dimnames = list(NULL, c("Full", "Stepwise", "Reduced")))
+
+for (i in 1:k) {
+  valid     <- train[fold == i, ]                           # validation fold
+  train.dat <- train[fold != i, ]                           # the other k - 1 folds
+  ## candidate models fit to the k - 1 folds
+  cand.full <- glm(f.full, family = binomial(link = "logit"), data = train.dat)
+  cand.red  <- glm(f.red,  family = binomial(link = "logit"), data = train.dat)
+  cand.step <- stepAIC(cand.red,
+                       scope = list(lower = formula(cand.red), upper = formula(cand.full)),
+                       direction = "forward", trace = 0)
+  ## predicted probabilities for the validation fold
+  prob <- cbind(predict(cand.full, newdata = valid, type = "response"),
+                predict(cand.step, newdata = valid, type = "response"),
+                predict(cand.red,  newdata = valid, type = "response"))
+  pred.outcome <- ifelse(prob > cutoff, "survived", "died")
+  PE[i, ] <- colMeans(pred.outcome != as.character(valid$survived))
+}
+avg.pe <- colMeans(PE)                                      # average prediction error
+se.pe  <- apply(PE, 2, sd) / sqrt(k)                        # standard error of the average
+pander(rbind(Avg.PE = avg.pe, SE = se.pe), caption = "Average 10-fold cross-validation prediction error of the candidate models")
+```
+
+```{r cv-choice, include=FALSE}
+n.par <- sapply(list(Full = m.full, Stepwise = m.step, Reduced = m.red), function(m) length(coef(m)))
+best <- which.min(avg.pe)
+within.1se <- avg.pe <= avg.pe[best] + se.pe[best]          # candidates within one SE of the best
+cv.winner  <- names(which.min(n.par[within.1se]))           # simplest model among those
+```
+
+The full model has the smallest average prediction error (`r round(avg.pe["Full"], 4)`), and the stepwise model is essentialy tied with it (`r round(avg.pe["Stepwise"], 4)`). The difference between them is far smaller than the standard error of either average, so cross-validation can't tell them apart. The reduced model is worse (`r round(avg.pe["Reduced"], 4)`, more than one standard error above the best), which suggests that age and family size carry predictive information beyond sex and class.
+
+Since the candidates models are statistically tied, I choose the simplest one (the one-standard-error rule). The simplest model whose is the **`r tolower(cv.winner)` model**, so it is the winner of the cross-validation.
+
+
+Following Step 4 of the cross-validation procedure, I now use the winner fit to the entire training set as the final working model.
+
+```{r final-model}
+final.model <- list(Full = m.full, Stepwise = m.step, Reduced = m.red)[[cv.winner]]
+formula(final.model)
+```
+
+```{r final-coef}
+pander(summary(final.model)$coef, caption = "Coefficients of the final model (fit to the entire training set)")
+```
+
+## Final model reporting - performance on the test data
+
+The accuracy reported to a client MUST come from the withheld **test data**, because the validation folds were used to choose the model and therefore give a slightly optimistic picture. The parameters of the final model are not changed in any way after this step.
+
+```{r test-perf}
+prob.test <- predict(final.model, newdata = test, type = "response")
+pred.test <- factor(ifelse(prob.test > 0.5, "survived", "died"), levels = c("died", "survived"))
+cm <- table(Predicted = pred.test, Actual = test$survived)
+cm
+
+TP <- cm["survived", "survived"]; FP <- cm["survived", "died"]
+FN <- cm["died", "survived"];     TN <- cm["died", "died"]
+perf <- data.frame(Accuracy = (TP + TN) / sum(cm),
+                   Prediction.Error = (FP + FN) / sum(cm),
+                   Sensitivity = TP / (TP + FN),
+                   Specificity = TN / (TN + FP),
+                   False.Negative.Rate = FN / (TP + FN),
+                   False.Positive.Rate = FP / (FP + TN))
+pander(round(perf, 4), caption = "Performance of the final model on the test data (cut-off = 0.5)")
+
+roc.test.obj <- roc(test$survived, prob.test, levels = c("died", "survived"), direction = "<", quiet = TRUE)
+auc.test <- as.numeric(auc(roc.test.obj))
+base.acc <- max(table(test$survived)) / nrow(test)         # accuracy of always predicting the majority class
+```
+
+On the test data, the final model has an accuracy of **`r round(100*perf$Accuracy, 1)`%** (prediction error `r round(100*perf$Prediction.Error, 1)`%), with a sensitivity of `r round(100*perf$Sensitivity, 1)`% and a specificity of `r round(100*perf$Specificity, 1)`%. The test-data AUC is `r round(auc.test, 3)`. For comparison, simply predicting the majority class ("died") for everyone would be right `r round(100*base.acc, 1)`% of the time, so the model is a real improvement over the baseline.
+
+The test accuracy is a bit lower than the accuracy implied by the cross-validation (1 - `r round(avg.pe[cv.winner], 3)` = `r round(100*(1 - avg.pe[cv.winner]), 1)`%). That's not unusual. The test set has only `r nrow(test)` passengers, so its accuracy has a standard error of roughly `r round(100*sqrt(perf$Accuracy*(1 - perf$Accuracy)/nrow(test)), 1)` percentage points. The model is noticeably better at identifying who died (specificity) than who survived (sensitivity), which is typical when the cut-off is 0.5 and "died" is the larger group.
+
+
+
+## ROC analysis - global performance
+
+The accuracy and PE above depend on the cut-off probability, so they are *local* performance measures. The ROC curve plots the sensitivity (TPR) against 1 - specificity (FPR) over all possible cut-offs, and the area under the curve (AUC) is a **global** measure of how well the model ranks survivors above non-survivors. Since the ROC is used for model selection, I construct the ROC curves from the **training data** for the three candidate models.
+
+```{r roc, fig.width=5.5, fig.height=5.5, fig.align='center', fig.cap="ROC curves of the three candidate models (training data)"}
+mk.roc <- function(m) roc(train$survived, as.vector(predict(m, newdata = train, type = "response")),
+                          levels = c("died", "survived"), direction = "<", quiet = TRUE)
+ROC.full <- mk.roc(m.full)
+ROC.step <- mk.roc(m.step)
+ROC.red  <- mk.roc(m.red)
+AUC.full <- round(as.numeric(auc(ROC.full)), 4)
+AUC.step <- round(as.numeric(auc(ROC.step)), 4)
+AUC.red  <- round(as.numeric(auc(ROC.red)), 4)
+
+plot(1 - ROC.full$specificities, ROC.full$sensitivities, type = "l", col = 2, lty = 1,
+     xlim = c(0, 1), ylim = c(0, 1),
+     xlab = "FPR: 1 - specificity", ylab = "TPR: sensitivity",
+     main = "ROC curves of the three candidate models", cex.main = 0.9, col.main = "navy")
+lines(1 - ROC.step$specificities, ROC.step$sensitivities, col = 3, lty = 2)
+lines(1 - ROC.red$specificities,  ROC.red$sensitivities,  col = 4, lty = 3)
+abline(0, 1, col = "grey60", lty = 4)                       # chance line
+legend("bottomright", c(paste("Full model: AUC =", AUC.full),
+                        paste("Stepwise model: AUC =", AUC.step),
+                        paste("Reduced model: AUC =", AUC.red)),
+       col = 2:4, lty = 1:3, cex = 0.8, bty = "n")
+```
+
+The full model and the stepwise model have almost the same ROC curve and AUC (`r AUC.full` and `r AUC.step`), and both are better than the reduced model (`r AUC.red`). Since the stepwise model is simpler than the full model, the ROC analysis also points to the **stepwise model**, the same conclusion as the cross-validation. (These ROC curves and AUCs are computed on the data the models were fit to, so they are somewhat optimistic in absolute terms, but they are used here only to *compare* the candidates against each other.)
+
+# Summary and Conclusion
+
+This report used logistic regression to predict survival on the *Titanic*. After removing records with a missing age or port, I log-transformed and standardized fare, discretized age and family size, and randomly split the `r n` complete passengers into `r nrow(train)` for training and `r nrow(test)` for testing. Three candidate models  (full, reduced, and stepwise) were compared using 10-fold cross-validation on the training data and with ROC curves and AUC.
+
+* **Cross-validation:** the full and stepwise models had practically the same average prediction error (`r round(avg.pe["Full"], 3)` and `r round(avg.pe["Stepwise"], 3)`), and both beat the reduced model (`r round(avg.pe["Reduced"], 3)`).
+* **ROC analysis:** the AUCs of the full and stepwise models were nearly equal (`r AUC.full` and `r AUC.step`), and both were higher than the reduced model's (`r AUC.red`).
+* **Final model:** both methods agreed, so the final model is the simpler **`r tolower(cv.winner)` model**, `r deparse(formula(final.model))`. Port of embarkation and fare don't improve prediction once sex, class, age group, and family size are in the model.
+* **Actual performance:** on the `r nrow(test)` withheld test passengers, the final model has an accuracy of `r round(100*perf$Accuracy, 1)`% (compared with `r round(100*base.acc, 1)`% for always predicting "died"), a sensitivity of `r round(100*perf$Sensitivity, 1)`%, a specificity of `r round(100*perf$Specificity, 1)`%, and an AUC of `r round(auc.test, 3)`.
+
+**Limitations and possible improvements.** First, the test set is small, so the reported accuracy is uncertain by a few percentage points, and a different random split would give slightly different numbers. Second, I used a cut-off of 0.5 for all models. Since the model is better at identifying who died than who survived, the cut-off could be tuned. One way to do this would be plotting the accuracy against the cut-off within cross-validation, but only if the two kinds of errors are not equally costly. Third, I used complete-case analysis even though missing ages aren't missing completely at random, so the model applies most directly to passengers with a recorded age. Fourth, I found significant interaction between sex and ticket class during testing, which none of these main-effects models includes. Adding it or comparing the logistic model against other algorithms could improve the predictive performance.
