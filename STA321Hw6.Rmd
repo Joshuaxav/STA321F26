@@ -1,0 +1,430 @@
+---
+title: "Poisson Regression of Daily Bike Counts on a New York City Bridge"
+author: "Joshua Xavier"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    fig_width: 6
+    fig_height: 4
+    fig_caption: yes
+    number_sections: yes
+    toc_collapsed: yes
+    code_folding: hide
+    code_download: yes
+    smooth_scroll: yes
+    theme: lumen
+  word_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    number_sections: yes
+    fig_width: 5
+    fig_height: 4
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{=html}
+
+<style type="text/css">
+
+h1.title {  /* Title - font specifications of the report title */
+  font-size: 24px;
+  color: DarkRed;
+  text-align: center;
+  font-family: "Gill Sans", sans-serif;
+}
+h4.author { /* Header 4 - font specifications for authors  */
+  font-size: 20px;
+  font-family: system-ui;
+  color: DarkRed;
+  text-align: center;
+}
+h4.date { /* Header 4 - font specifications for the date  */
+  font-size: 18px;
+  font-family: system-ui;
+  color: DarkBlue;
+  text-align: center;
+}
+h1 { /* Header 1 - font specifications for level 1 section title  */
+    font-size: 22px;
+    font-family: system-ui;
+    color: navy;
+    text-align: left;
+}
+h2 { /* Header 2 - font specifications for level 2 section title */
+    font-size: 20px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+h3 { /* Header 3 - font specifications of level 3 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+h4 { /* Header 4 - font specifications of level 4 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: darkred;
+    text-align: left;
+}
+body { background-color:white; }
+.highlightme { background-color:yellow; }
+p { background-color:white; }
+
+</style>
+```
+```{r setup, include=FALSE}
+# Detect, install and load packages if needed.
+for (pkg in c("knitr", "pander", "psych", "car", "pROC", "scales", "tidyverse", "MASS")) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+# NOTE: MASS is loaded last so that stepAIC() is available. MASS::select() masks
+# dplyr::select(), so I never call select() in this report.
+
+knitr::opts_chunk$set(echo = TRUE,      # include code chunk in the output file
+                      warning = FALSE,  # do not print warnings in the output file
+                      message = FALSE,  # do not print package messages in the output file
+                      results = TRUE,
+                      comment = NA      # remove leading ## in the output
+                      )
+
+# helper so the p-values in my inline text print the APA way
+fmtp <- function(p) ifelse(p < .001, "< .001", paste0("= ", sub("^0", "", sprintf("%.3f", p))))
+```
+# Introduction
+
+New York City has several bridges across the East River, and thousands of cyclists use them every day. In this report I use **Poisson regression** to study how many cyclists cross one of these bridges on a given day, and how the weather and the day of the week change that number. I fit two models to the same data to make a Poisson model for the **daily counts** of cyclists on my bridge, and a Poisson model for the **rate**, that is, my bridge's share of all cyclists on the four bridges, which uses the day's total as an offset.
+
+
+# Description of the Data and Variables
+
+## Data collection
+
+The Traffic Information Management System (TIMS) collects the data. Counts of cyclists entering and leaving Queens, Manhattan, and Brooklyn over the East River are taken on the Brooklyn, Manhattan, Williamsburg, and Queensboro Bridges. Each record is the **total number of cyclists in 24 hours** on one of these bridges. There are ten subsets, each covering one bridge in one month of 2017, together with the weather for each day. I drew my sheet with a random draw.
+
+```{r load}
+set.seed(321)
+id <- sample(1:10, 1)                    # the sheet number drawn: change this line to use a different sheet
+library(openxlsx)
+dat <- read.xlsx("https://raw.githubusercontent.com/Joshuaxav/STA321F26/main/w09-AssignDataSet.xlsx",
+                 sheet = paste("data", id, sep = ""))
+bridge.name <- names(dat)[6]             # the sixth column is the bridge in my data set
+n.days <- nrow(dat)
+```
+
+The random draw gave sheet **`r id`**, which contains the daily counts for the **`r bridge.name`**.
+
+## Variables
+
+The variable **Date** is the observation ID, so each row is one day. The table lists all the variables in the file.
+
+```{r variables}
+var.tab <- data.frame(
+  Variable = c("Date", "Day", "HighTemp", "LowTemp", "Precipitation", bridge.name, "Total"),
+  Definition = c("Observation ID: the calendar day (stored as an Excel date number)",
+                 "Same number as Date in this file (see below)",
+                 "Highest temperature of the day (degrees Fahrenheit)",
+                 "Lowest temperature of the day (degrees Fahrenheit)",
+                 "Amount of precipitation during the day (inches)",
+                 paste("Number of cyclists crossing the", bridge.name, "in 24 hours (the count response)"),
+                 "Total number of cyclists crossing all four bridges that day (used for the rate)"),
+  Type = c("ID", "ID (duplicate)", "Continuous", "Continuous", "Continuous", "Count", "Count"))
+pander(var.tab, split.table = Inf, caption = "Variables in the data set")
+```
+
+The table shows that the file has three kinds of columns: the ID, the weather variables that I will use as predictors, and two counts. The two counts that matter are the bridge count for the response of the first model, and the total ,which gives the denominator for the rate in the second model.
+
+I noticed that **Day** contains exactly the same number as **Date** in every row since it is probably a day-of-week label that was converted. I therefore rebuild the day of the week from Date. Commuter traffic usually differs between weekdays and weekends, so I create one extra predictor, **Weekend**, which is "Weekend" for Saturday and Sunday and "Weekday" otherwise. I use the numeric weekday code from `format(, "%u")` so the result does not depend on the language of the computer.
+
+```{r prepare}
+dat$Date2 <- as.Date(dat$Date, origin = "1899-12-30")                       # Excel date number to a real date
+dat$Weekend <- factor(ifelse(as.numeric(format(dat$Date2, "%u")) >= 6, "Weekend", "Weekday"),
+                      levels = c("Weekday", "Weekend"))                     # Weekday is the baseline
+dat$Bridge <- dat[, 6]                                                      # the response: daily count on my bridge
+dat$logTotal <- log(dat$Total)                                              # offset for the rate model
+dat$Share <- dat$Bridge / dat$Total                                         # my bridge's share of all four bridges
+cor.hl <- cor(dat$HighTemp, dat$LowTemp)
+```
+
+## First look at the data
+
+Here we look at the 5 number summary of the variables along with scatter plots of the variables (x) and count(y). 
+
+```{r summary}
+sum.tab <- sapply(dat[, c("HighTemp", "LowTemp", "Precipitation", "Bridge", "Total", "Share")],
+                  function(x) c(Min = min(x), Median = median(x), Mean = mean(x), Max = max(x), SD = sd(x)))
+pander(t(sum.tab), digits = 4, caption = "Summary statistics of the numerical variables")
+```
+
+The data cover **`r n.days` days**, from `r format(min(dat$Date2), "%B %d, %Y")` to `r format(max(dat$Date2), "%B %d, %Y")`, and **`r sum(dat$Weekend == "Weekend")`** of those days are weekend days. On an average day, about `r round(mean(dat$Bridge))` cyclists crossed the `r bridge.name`, and these made up about `r round(100*mean(dat$Share), 1)`% of the cyclists on all four bridges. Rain was rare: the median precipitation is `r median(dat$Precipitation)`, and most of the rain fell on a few days (the maximum is `r max(dat$Precipitation)` inches). A noticeable feature is that the standard deviation of the daily count (`r round(sd(dat$Bridge))`) is much larger than what a Poisson distribution with this mean would allow (its SD would be about `r round(sqrt(mean(dat$Bridge)))`). I come back to this important point in Section 5.5.
+
+```{r time-plot, fig.cap="Daily cyclists on the bridge (left) and the bridge's share of all four bridges (right). Weekend days are shown in red."}
+par(mfrow = c(1, 2), mar = c(4.5, 4.5, 3, 1))
+col.wk <- ifelse(dat$Weekend == "Weekend", "firebrick", "steelblue")
+plot(dat$Date2, dat$Bridge, type = "b", pch = 19, col = col.wk, xlab = "Date", ylab = "Cyclists per day",
+     main = "Daily count", cex.main = 0.9)
+legend("bottomleft", c("Weekday", "Weekend"), pch = 19, col = c("steelblue", "firebrick"), bty = "n", cex = 0.8)
+plot(dat$Date2, dat$Share, type = "b", pch = 19, col = col.wk, xlab = "Date", ylab = "Share of the four bridges",
+     main = "Daily share", cex.main = 0.9)
+```
+
+The left panel shows that the daily count goes up and down quickly, and the red weekend points are usually among the lowest values, so the day of the week looks important for the counts. The right panel shows that the share of the four bridges stays in a narrow band around `r round(100*mean(dat$Share), 0)`% and does not show the same weekend drop. This is a first hint that the weekend lowers the traffic on all the bridges together, so it changes the count more than it changes the share. The models below will test that idea.
+
+```{r scatter-plots, fig.cap="Daily count versus the high temperature (left) and versus precipitation (right)."}
+par(mfrow = c(1, 2), mar = c(4.5, 4.5, 3, 1))
+plot(dat$HighTemp, dat$Bridge, pch = 19, col = col.wk, xlab = "High temperature (F)", ylab = "Cyclists per day",
+     main = "Count vs. high temperature", cex.main = 0.9)
+plot(dat$Precipitation, dat$Bridge, pch = 19, col = col.wk, xlab = "Precipitation (inches)", ylab = "Cyclists per day",
+     main = "Count vs. precipitation", cex.main = 0.9)
+```
+
+The left scatter plot shows no strong straight-line relationship between the high temperature and the count in this month, which is not surprising because the temperature varies only between `r min(dat$HighTemp)` and `r max(dat$HighTemp)` degrees (a warm summer month, when most days are comfortable for cycling). The right plot shows that the days with rain had some of the lowest counts. The high and low temperatures are strongly correlated with each other (*r* = `r round(cor.hl, 2)`), which will matter when I interpret their coefficients.
+
+# Research Questions
+
+The practical question is how does the number of cyclists using the `r bridge.name` change based on the weather and on the day of the week. 
+
+Explicitly, how do the high temperature, the low temperature, precipitation, and weekends affect the expected number of cyclists per day on the `r bridge.name`?
+Along with that how do the same variables affect the share of all four-bridge cyclists who use the `r bridge.name`? Do these variables change *where* cyclists go and not only *how many* there are?
+
+The response for Question 1 is the daily count Bridge (`r bridge.name`). The response for Question 2 is the same count, but modeled as a rate relative to the Total of the four bridges, so the response is the proportion Bridge / Total.
+
+# The Statistical Model
+
+## Poisson regression and its assumptions
+
+The response is a count of events (cyclists) in a fixed period (24 hours), so I use a **Poisson regression model**. It assumes that:
+
+* **Poisson response:** the response is a count per unit of time or space and follows a Poisson distribution,
+* **Independence:** the observations are independent of one another,
+* **Mean equals variance:** the mean and the variance of the response are equal, and
+* **Linearity:** the log of the mean is a linear function of the predictors.
+
+The **count model** is
+$$\log(\mu) = \beta_0 + \beta_1\,\text{HighTemp} + \beta_2\,\text{LowTemp} + \beta_3\,\text{Precipitation} + \beta_4\,\text{Weekend},$$
+where $\mu$ is the expected number of cyclists per day. A coefficient $\beta_i$ is the change in the **log** of the expected count for a one-unit increase in that predictor, with the other predictors fixed, so $e^{\beta_i}$ is the factor by which the expected count is multiplied (a rate ratio).
+
+The **rate model** adds the log of the total as an offset:
+$$\log(\mu / \text{Total}) = \beta_0 + \beta_1\,\text{HighTemp} + \beta_2\,\text{LowTemp} + \beta_3\,\text{Precipitation} + \beta_4\,\text{Weekend},$$
+which is the same as $\log(\mu) = \beta_0 + \cdots + \log(\text{Total})$. The coefficients now describe the **share** of the four-bridge total, and $e^{\beta_i}$ is the factor by which that share is multiplied.
+
+## Model building
+
+For each model I start with all four predictors, and I use the p-values of the coefficients to select the variables. At each step I remove the variable with the largest p-value, as long as that p-value is above 0.05, and refit the model. The final model has variables significant at the 5% level under the Poisson assumption
+
+```{r select-function}
+select.by.p <- function(fit, alpha = 0.05) {
+  path <- data.frame(Step = integer(), Dropped = character(), p.value = numeric())
+  repeat {
+    pv <- summary(fit)$coef[-1, "Pr(>|z|)"]                                  # p-values without the intercept
+    trm <- attr(terms(fit), "term.labels")                                   # the predictors still in the model
+    if (length(trm) == 0) break
+    p.term <- sapply(trm, function(t) min(pv[startsWith(names(pv), t)]))     # one p-value per predictor
+    if (max(p.term) <= alpha) break                                          # all predictors significant: stop
+    worst <- names(which.max(p.term))
+    path <- rbind(path, data.frame(Step = nrow(path) + 1, Dropped = worst, p.value = max(p.term)))
+    fit <- update(fit, as.formula(paste(". ~ . -", worst)))                  # drop it and refit
+  }
+  list(fit = fit, path = path)
+}
+
+coef.table <- function(fit) {
+  co <- summary(fit)$coef
+  ci <- exp(confint.default(fit))                                            # Wald 95% CI on the ratio scale
+  data.frame(Estimate = co[, 1], Std.Error = co[, 2], z.value = co[, 3],
+             p.value = ifelse(co[, 4] < 0.0001, "< 0.0001", sprintf("%.4f", co[, 4])),
+             Ratio = exp(co[, 1]), Lower.95 = ci[, 1], Upper.95 = ci[, 2])
+}
+disp <- function(fit) sum(residuals(fit, type = "pearson")^2) / fit$df.residual   # dispersion statistic
+sig.terms <- function(fit, alpha = 0.05) {                                          # predictors with p < alpha
+  pq <- summary(fit)$coef[-1, 4]
+  sub("WeekendWeekend", "Weekend", names(pq)[pq < alpha])
+}
+```
+
+# Poisson Regression on the Counts
+
+## The full model
+
+I first fit the model with all four predictors to the daily counts.
+
+```{r count-full}
+count.full <- glm(Bridge ~ HighTemp + LowTemp + Precipitation + Weekend, family = poisson(link = "log"), data = dat)
+pander(coef.table(count.full), digits = 4, split.table = Inf, caption = "Poisson regression of the daily count: full model (Ratio = exp(Estimate))")
+```
+
+The table gives the estimate, the standard error, the z statistic, and the p-value of each coefficient, and also the ratio $e^{\hat\beta}$ with its 95% confidence interval. All four predictors have p-values below 0.0001, so there is statistical evidence that each one is associated with the daily count. This is a very strong result, and I explain in Section 5.5 why it should be treated with some care.
+
+## Variable selection by p-values
+Here I assertain wether any variables have p-values above 0.05. If any do, they are removed from the model.
+
+```{r count-select}
+count.sel <- select.by.p(count.full)
+count.final <- count.sel$fit
+if (nrow(count.sel$path) == 0) {
+  cat("No variable was removed: every p-value was below 0.05 in the full model.")
+} else {
+  pander(count.sel$path, caption = "Variables removed from the count model")
+}
+```
+
+Because every p-value is already below 0.05, no variable is removed, and the full model is also the **final count model**. The p-value rule keeps all four predictors: HighTemp, LowTemp, Precipitation, and Weekend.
+
+## Interpretation of the coefficients
+Here I find the final count model of the poisson regression and interpret the variable coefficients to make assumptions about the variables real world impact as well as their impact on the model.
+
+```{r count-final}
+pander(coef.table(count.final), digits = 4, split.table = Inf, caption = "Final Poisson regression model for the daily count")
+bc <- coef(count.final); rc <- exp(bc)
+```
+
+The final count model is
+$$\log(\hat\mu) = `r round(bc[1], 4)` + `r round(bc["HighTemp"], 4)`\,\text{HighTemp} `r round(bc["LowTemp"], 4)`\,\text{LowTemp} `r round(bc["Precipitation"], 4)`\,\text{Precipitation} `r round(bc["WeekendWeekend"], 4)`\,\text{Weekend}.$$
+Each coefficient is read with the other variables held fixed:
+
+* **Precipitation:** the coefficient is `r round(bc["Precipitation"], 4)`, so each additional inch of precipitation multiplies the expected daily count by $e^{`r round(bc["Precipitation"], 4)`} = `r round(rc["Precipitation"], 3)`$, which is about `r round(100*(1 - rc["Precipitation"]))`% fewer cyclists. Since a whole inch is a lot of rain, a more practical statement is that 0.1 inch of rain is associated with about `r round(100*(1 - exp(0.1*bc["Precipitation"])), 1)`% fewer cyclists.
+* **Weekend:** the coefficient is `r round(bc["WeekendWeekend"], 4)`, so the expected count on a weekend is $e^{`r round(bc["WeekendWeekend"], 4)`} = `r round(rc["WeekendWeekend"], 3)`$ times the weekday count, about `r round(100*(1 - rc["WeekendWeekend"]), 1)`% fewer cyclists. This is consistent with a bridge that is used heavily for commuting.
+* **HighTemp and LowTemp:** a one-degree rise in the high temperature multiplies the expected count by `r round(rc["HighTemp"], 4)` (about `r round(100*(rc["HighTemp"] - 1), 1)`% more), and a one-degree rise in the low temperature multiplies it by `r round(rc["LowTemp"], 4)` (about `r round(100*(1 - rc["LowTemp"]), 1)`% fewer). The two temperatures have opposite signs because they are strongly correlated (*r* = `r round(cor.hl, 2)`), so they should be read together and not one at a time. If both rise by one degree, the count is multiplied by $e^{`r round(bc["HighTemp"] + bc["LowTemp"], 4)`} = `r round(exp(bc["HighTemp"] + bc["LowTemp"]), 4)`$, only a `r round(100*abs(exp(bc["HighTemp"] + bc["LowTemp"]) - 1), 1)`% change. The more useful reading is that, for a given low temperature, a bigger daily temperature swing (a higher high) goes with more cyclists.
+* **Intercept:** the intercept is the log of the expected count for a weekday with no rain and a high and low temperature of 0 degrees, which is far outside the data, so it has no practical meaning.
+
+## Fitted count model
+Here I graph the weekend and weekday curves using expected counts to monitor the trends and dispersion of the data.
+
+```{r count-plot, fig.cap="Expected daily count from the final count model as the high temperature changes (no rain, low temperature at its average)."}
+newd <- expand.grid(HighTemp = seq(min(dat$HighTemp), max(dat$HighTemp), length.out = 50),
+                    Weekend = factor(c("Weekday", "Weekend"), levels = levels(dat$Weekend)))
+newd$LowTemp <- mean(dat$LowTemp); newd$Precipitation <- 0
+newd$pred <- predict(count.final, newdata = newd, type = "response")
+plot(dat$HighTemp, dat$Bridge, pch = 19, col = adjustcolor(col.wk, 0.45), xlab = "High temperature (F)",
+     ylab = "Cyclists per day", main = "Fitted count model")
+lines(newd$HighTemp[newd$Weekend == "Weekday"], newd$pred[newd$Weekend == "Weekday"], col = "steelblue", lwd = 2)
+lines(newd$HighTemp[newd$Weekend == "Weekend"], newd$pred[newd$Weekend == "Weekend"], col = "firebrick", lwd = 2, lty = 2)
+legend("bottomright", c("Weekday", "Weekend"), col = c("steelblue", "firebrick"), lty = 1:2, lwd = 2, bty = "n")
+```
+
+The figure turns the coefficients into expected counts. The two curves are **parallel on the log scale**: the weekend curve is the weekday curve multiplied by `r round(rc["WeekendWeekend"], 2)`, which is why it sits about `r round(100*(1 - rc["WeekendWeekend"]))`% lower at every temperature. The curves rise slowly with the high temperature, which agrees with the small positive coefficient. The dots (the actual days) are scattered widely around the curves, especially the rainy days, which are not drawn here because the curves are for a day with no rain. This large scatter is the visible sign of the dispersion problem.
+
+## Hurdle: The counts are overdispersed
+
+The Poisson model assumes that the variance of the count equals its mean. I check this assumption using the dispersion statistic (the sum of the squared Pearson residuals divided by the residual degrees of freedom), which should be close to 1 if the assumption holds. This is a quick check and not a full model diagnosis, which is the topic of the next assignment. I also refit the final model as a **quasi-Poisson** model, which keeps the same coefficients but estimates the dispersion from the data and corrects the standard errors.
+
+```{r count-disp}
+count.q <- update(count.final, family = quasipoisson)
+cmp.count <- data.frame(Poisson.p = summary(count.final)$coef[, 4], Quasi.p = summary(count.q)$coef[, 4])
+cmp.count <- data.frame(Term = rownames(cmp.count),
+                        Poisson.p = ifelse(cmp.count$Poisson.p < 0.0001, "< 0.0001", sprintf("%.4f", cmp.count$Poisson.p)),
+                        Quasi.p = ifelse(cmp.count$Quasi.p < 0.0001, "< 0.0001", sprintf("%.4f", cmp.count$Quasi.p)))
+pander(cmp.count, caption = "p-values of the final count model under the Poisson and the quasi-Poisson assumptions")
+d.count <- disp(count.final)
+```
+
+The dispersion statistic is **`r round(d.count, 1)`**, far above 1, so the daily counts are much more spread out than a Poisson distribution allows. The standard errors of the Poisson model are therefore too small by a factor of about `r round(sqrt(d.count), 1)` (the square root of the dispersion), which is why every p-value in the Poisson tables was essentially zero. With the corrected quasi-Poisson p-values, `r paste(sig.terms(count.q), collapse = " and ")` remain significant, and the temperature variables are no longer clearly significant. I would trust the conclusions about **precipitation and weekends** much more than the conclusions about the temperatures.
+
+# Poisson Regression on the Rates
+Here I make a rate model to estimate the share of all four bridge cyclists who use the `r bridge.name` and find wether it is useful. This is done through variable selection using p-values, interpreting the coefficients, and monitoring trends and dispersion of the data.
+
+## Why a rate model
+
+Counts on one bridge depend on how many cyclists ride that day on all the bridges. A warm Tuesday and a cold Sunday have very different totals, so the count model mixes two things: how many cyclists there are, and how they split among the bridges. The rate model separates them by using the **proportion** Bridge / Total as the response. In R this is done with the offset `log(Total)`, so the model estimates the share of all four-bridge cyclists who use the `r bridge.name`.
+
+## The full rate model
+Here I fit the model with all predictors.
+
+```{r rate-full}
+rate.full <- glm(Bridge ~ HighTemp + LowTemp + Precipitation + Weekend + offset(logTotal),
+                 family = poisson(link = "log"), data = dat)
+pander(coef.table(rate.full), digits = 4, split.table = Inf, caption = "Poisson regression of the rate (share of the four bridges): full model")
+```
+
+In the full rate model, HighTemp, LowTemp, and Precipitation have very small p-values, but **Weekend does not** (its p-value is `r round(summary(rate.full)$coef["WeekendWeekend", 4], 3)`). This matches what the right panel of the time plot suggested: the weekend lowers the number of cyclists on every bridge, so the bridge's *share* does not change much.
+
+## Variable selection by p-values
+Here I assertain wether any variables have p-values above 0.05. If any do, they are removed from the model.
+
+```{r rate-select}
+rate.sel <- select.by.p(rate.full)
+rate.final <- rate.sel$fit
+pander(rate.sel$path, caption = "Variables removed from the rate model")
+```
+
+The selection removed **`r paste(rate.sel$path$Dropped, collapse = ", ")`** (p-value `r round(rate.sel$path$p.value[1], 3)`) and then stopped, because all the remaining p-values are below 0.05.
+
+## Interpretation of the coefficients
+Here I find the final rate model of the poisson regression and interpret the variable coefficients to make assumptions about the variables real world impact as well as their impact on the model.
+
+```{r rate-final}
+pander(coef.table(rate.final), digits = 4, split.table = Inf, caption = "Final Poisson rate model (share of the four bridges)")
+br <- coef(rate.final); rr <- exp(br)
+```
+
+The final rate model is
+$$\log(\hat\mu / \text{Total}) = `r round(br[1], 4)` `r round(br["HighTemp"], 4)`\,\text{HighTemp} + `r round(br["LowTemp"], 4)`\,\text{LowTemp} + `r round(br["Precipitation"], 4)`\,\text{Precipitation}.$$
+Here a coefficient describes the change in the log of the **share**, and $e^{\hat\beta}$ is the factor by which the share is multiplied:
+
+* **Precipitation:** each additional inch of precipitation multiplies the bridge's share by $e^{`r round(br["Precipitation"], 4)`} = `r round(rr["Precipitation"], 3)`$, about `r round(100*(rr["Precipitation"] - 1), 1)`% higher. On rainy days the `r bridge.name` loses fewer cyclists than the four bridges together, so its share rises. (For comparison, its own count falls with rain, as the count model showed.) However, this effect is not significant after the overdispersion correction in Section 6.6, so it should be treated as suggestive only.
+* **HighTemp and LowTemp:** a one-degree rise in the high temperature multiplies the share by `r round(rr["HighTemp"], 4)` (`r round(100*(rr["HighTemp"] - 1), 2)`%), and a one-degree rise in the low temperature multiplies it by `r round(rr["LowTemp"], 4)` (`r round(100*(rr["LowTemp"] - 1), 2)`%). Again, the two temperatures are correlated and have opposite signs, so the net effect of warming both by one degree is a factor of `r round(exp(br["HighTemp"] + br["LowTemp"]), 4)`, which is small. The share changes mainly with the *size* of the daily temperature swing: for a given low temperature, a hotter high lowers the bridge's share by about `r round(100*(1 - rr["HighTemp"]), 2)`% per degree, and for a given high, a warmer low raises it by about `r round(100*(rr["LowTemp"] - 1), 2)`% per degree. These effects are small in practical terms: with a share near `r round(100*mean(dat$Share), 0)`%, even a 10-degree change in one temperature moves the share by only about `r round(100*abs(exp(10*br["LowTemp"]) - 1))`%.
+* **Weekend:** it was removed, so there is no evidence that the weekend changes the `r bridge.name`'s share.
+* **Intercept:** $e^{`r round(br[1], 4)`} = `r round(exp(br[1]), 3)`$ is the share when all the temperatures and the precipitation equal 0, which is outside the data, so it is only a baseline for the equation.
+
+## Fitted Rate Model
+Here I graph the model to analyze trends and possible pitfalls. Once again dispersion is a problem.
+
+```{r rate-plot, fig.cap="Fitted share of the four bridges as precipitation changes (temperatures at their averages), with the observed daily shares."}
+newr <- data.frame(Precipitation = seq(0, max(dat$Precipitation), length.out = 50),
+                   HighTemp = mean(dat$HighTemp), LowTemp = mean(dat$LowTemp), Weekend = "Weekday", logTotal = 0)
+newr$share <- predict(rate.final, newdata = newr, type = "response")    # logTotal = 0 gives the rate itself
+plot(dat$Precipitation, dat$Share, pch = 19, col = adjustcolor("steelblue", 0.6), xlab = "Precipitation (inches)",
+     ylab = "Share of the four bridges", main = "Fitted rate model")
+lines(newr$Precipitation, newr$share, col = "darkred", lwd = 2)
+```
+
+The line shows the model's predicted share as precipitation increases while the temperatures are kept at their average values. It slopes **upward but gently**: the share rises from about `r round(100*newr$share[1], 1)`% on a dry day to about `r round(100*newr$share[nrow(newr)], 1)`% on the wettest day, which is a small change compared with the daily scatter of the points. The practical conclusion is that rain changes the share only slightly, even though it changes the number of cyclists a great deal.
+
+## Hurdle: Over dispersion of the rate model
+
+```{r rate-disp}
+rate.q <- update(rate.final, family = quasipoisson)
+cmp.rate <- data.frame(Term = rownames(summary(rate.final)$coef),
+                       Poisson.p = summary(rate.final)$coef[, 4], Quasi.p = summary(rate.q)$coef[, 4])
+cmp.rate$Poisson.p <- ifelse(cmp.rate$Poisson.p < 0.0001, "< 0.0001", sprintf("%.4f", cmp.rate$Poisson.p))
+cmp.rate$Quasi.p <- ifelse(summary(rate.q)$coef[, 4] < 0.0001, "< 0.0001", sprintf("%.4f", summary(rate.q)$coef[, 4]))
+pander(cmp.rate, caption = "p-values of the final rate model under the Poisson and the quasi-Poisson assumptions")
+d.rate <- disp(rate.final)
+```
+
+The dispersion of the rate model is **`r round(d.rate, 1)`**, much smaller than in the count model but still well above 1. This is expected: dividing by the total removes most of the day-to-day variation that comes from the overall level of riding. With the corrected p-values, the precipitation effect on the share is **no longer significant** (p = `r round(summary(rate.q)$coef["Precipitation", 4], 3)`), while the two temperature effects stay significant at the 5% level (p = `r round(summary(rate.q)$coef["HighTemp", 4], 3)` for the high and `r round(summary(rate.q)$coef["LowTemp", 4], 3)` for the low). So the slight rise of the share on rainy days is not reliable, and the temperature effects on the share, although significant, are small. The Poisson rate model also treats the share as a count, although it is a proportion between 0 and 1 (here about `r round(100*min(dat$Share))`% to `r round(100*max(dat$Share))`%), which is another reason for caution.
+
+# Summary of the Findings
+Here I go through the findings from analysis of both the count and rate models.
+I explore the outcomes and predictions of both models as well as why both should be used in tandem, along with a note about over dispersion present in both models.
+
+```{r summary-table}
+cmp <- merge(data.frame(Term = names(coef(count.final)), Count.model = exp(coef(count.final))),
+             data.frame(Term = names(coef(rate.final)), Rate.model = exp(coef(rate.final))),
+             by = "Term", all = TRUE, sort = FALSE)
+cmp <- cmp[match(c("(Intercept)", "HighTemp", "LowTemp", "Precipitation", "WeekendWeekend"), cmp$Term), ]
+cmp$Rate.model <- ifelse(is.na(cmp$Rate.model), "removed", sprintf("%.4f", cmp$Rate.model))
+cmp$Count.model <- sprintf("%.4f", cmp$Count.model)
+pander(cmp, row.names = FALSE, caption = "Rate ratios exp(coefficient) of the two final models")
+```
+
+The table puts the two final models side by side, using $e^{\hat\beta}$ so that every number is a multiplier. Here is what the two models say together about the `r bridge.name` in `r format(min(dat$Date2), "%B %Y")`:
+
+* **How many cyclists (count model):** precipitation and weekends are the clearest drivers. Each inch of rain is associated with about `r round(100*(1 - rc["Precipitation"]))`% fewer cyclists, and weekends with about `r round(100*(1 - rc["WeekendWeekend"]))`% fewer than weekdays. The two temperature terms have opposite signs because the high and low temperatures are strongly correlated (*r* = `r round(cor.hl, 2)`), and their combined effect is small.
+* **Where cyclists go (rate model):** the weekend plays no role in the bridge's share, which means that weekends reduce riding on all four bridges about equally. Rain appears to raise the bridge's share slightly (about `r round(100*(rr["Precipitation"] - 1), 1)`% per inch), but that effect is not significant after the overdispersion correction. The temperature terms have small effects of opposite sign.
+* **Why use both:** the count model describes the **level** of cycling, which depends on weather and the calendar, while the rate model describes the **distribution** of cyclists across the bridges once the overall level is taken out. For example, the weekend effect is large in the count model but disappears in the rate model, and this contrast is only visible when both models are fitted.
+* **Dispersion:** the daily counts are heavily overdispersed (dispersion `r round(d.count, 0)` for counts and `r round(d.rate, 0)` for rates), so the Poisson p-values are far too small. After the quasi-Poisson correction, `r paste(sig.terms(count.q), collapse = " and ")` remain significant for the counts, while the temperature effects do not. Consecutive days are also probably not independent, and the data cover one bridge for one month.
