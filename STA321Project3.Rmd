@@ -1,0 +1,535 @@
+---
+title: "Poisson and Quasi-Poisson Regression of Daily Bike Counts on a New York City Bridge"
+author: "Joshua Xavier"
+date:
+output:
+  html_document: 
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+    fig_width: 6
+    fig_height: 4
+    fig_caption: yes
+    number_sections: yes
+    toc_collapsed: yes
+    code_folding: hide
+    code_download: yes
+    smooth_scroll: yes
+    theme: lumen
+  word_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    toc_depth: 4
+    fig_caption: yes
+    number_sections: yes
+    fig_width: 5
+    fig_height: 4
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{=html}
+
+<style type="text/css">
+
+h1.title {  /* Title - font specifications of the report title */
+  font-size: 24px;
+  color: DarkRed;
+  text-align: center;
+  font-family: "Gill Sans", sans-serif;
+}
+h4.author { /* Header 4 - font specifications for authors  */
+  font-size: 20px;
+  font-family: system-ui;
+  color: DarkRed;
+  text-align: center;
+}
+h4.date { /* Header 4 - font specifications for the date  */
+  font-size: 18px;
+  font-family: system-ui;
+  color: DarkBlue;
+  text-align: center;
+}
+h1 { /* Header 1 - font specifications for level 1 section title  */
+    font-size: 22px;
+    font-family: system-ui;
+    color: navy;
+    text-align: left;
+}
+h2 { /* Header 2 - font specifications for level 2 section title */
+    font-size: 20px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+h3 { /* Header 3 - font specifications of level 3 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: navy;
+    text-align: left;
+}
+h4 { /* Header 4 - font specifications of level 4 section title  */
+    font-size: 18px;
+    font-family: "Times New Roman", Times, serif;
+    color: darkred;
+    text-align: left;
+}
+body { background-color:white; }
+.highlightme { background-color:yellow; }
+p { background-color:white; }
+
+</style>
+```
+```{r setup, include=FALSE}
+# Detect, install and load packages if needed.
+for (pkg in c("knitr", "pander", "openxlsx")) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+knitr::opts_chunk$set(echo = TRUE,      # include code chunk in the output file
+                      warning = FALSE,  # do not print warnings in the output file
+                      message = FALSE,  # do not print package messages in the output file
+                      results = TRUE,
+                      comment = NA      # remove leading ## in the output
+                      )
+
+# helper so the p-values in my inline text print the APA way
+fmtp <- function(p) ifelse(p < .001, "< .001", paste0("= ", sub("^0", "", sprintf("%.3f", p))))
+```
+
+# Introduction
+
+New York City has several bridges across the East River, and thousands of cyclists use them every day. In this project I use **Poisson regression** to study how many cyclists cross one of these bridges on a given day, and how the weather and the day of the week change that number. I start from my Week 9 analysis, which fitted a Poisson model for the **daily counts** and a Poisson model for the **rate** (the bridge's share of all cyclists on the four bridges, using the day's total as an offset). Both of those models turned out to be heavily overdispersed, so I added a **quasi-Poisson regression** with three predictors: the day of the week (**Day**), the average temperature (**AvgTemp**), and a rain indicator (**NewPrecip**). I then decide whether the ordinary Poisson model or the quasi-Poisson model is the right one for these data.
+
+# Description of the Data and Variables
+Here I describe where the data came from and the variables used in the model.
+
+## Data collection
+
+The Traffic Information Management System (TIMS) collects the data. Counts of cyclists entering and leaving Queens, Manhattan, and Brooklyn over the East River are taken on the Brooklyn, Manhattan, Williamsburg, and Queensboro Bridges. Each record is the **total number of cyclists in 24 hours** on one of these bridges. There are ten subsets, each covering one bridge in one month of 2017, together with the weather for each day. I drew my sheet with a random draw.
+
+```{r load}
+set.seed(321)
+id <- sample(1:10, 1)                    # the sheet number drawn: change this line to use a different sheet
+library(openxlsx)
+dat <- read.xlsx("https://raw.githubusercontent.com/Joshuaxav/STA321F26/main/w09-AssignDataSet.xlsx",
+                 sheet = paste("data", id, sep = ""))
+bridge.name <- names(dat)[6]             # the sixth column is the bridge in my data set
+n.days <- nrow(dat)
+n.miss <- sum(is.na(dat))                # number of missing cells in the whole sheet
+```
+
+The random draw gave sheet **`r id`**, which contains the daily counts for the **`r bridge.name`**. The sheet has **`r n.days` days** and **`r n.miss` missing values**, so every day can be used in the models.
+
+## Variables
+
+The variable **Date** is the observation ID, so each row is one day. The table lists all the variables in the file, followed by the two new predictors that I created.
+
+```{r variables}
+var.tab <- data.frame(
+  Variable = c("Date", "Day", "HighTemp", "LowTemp", "Precipitation", bridge.name, "Total",
+               "Weekend (created)", "AvgTemp (created)", "NewPrecip (created)"),
+  Definition = c("Observation ID: the calendar day",
+                 "Same number as Date in this file;",
+                 "Highest temperature of the day (degrees Fahrenheit)",
+                 "Lowest temperature of the day (degrees Fahrenheit)",
+                 "Amount of precipitation during the day (inches)",
+                 paste("Number of cyclists crossing the", bridge.name, "in 24 hours (the count response)"),
+                 "Total number of cyclists crossing all four bridges that day (used for the rate)",
+                 "Weekend for Saturday and Sunday, Weekday otherwise",
+                 "(HighTemp + LowTemp) / 2, the average temperature of the day",
+                 "0 if Precipitation = 0 (dry day), 1 if Precipitation > 0 (rainy day)"),
+  Type = c("ID", "ID (duplicate)", "Continuous", "Continuous", "Continuous", "Count", "Count",
+           "Binary", "Continuous", "Binary"))
+pander(var.tab, split.table = Inf, caption = "Variables in the data set")
+```
+
+The table shows that the file has three kinds of columns: the ID, the weather variables that I use as predictors, and two counts. The two counts that matter are the bridge count, which is the response of the count model, and the total, which gives the denominator for the rate in the rate model.
+
+I noticed that **Day** contains exactly the same number as **Date** in every row, since it is probably a day-of-week label that was converted by Excel. I therefore rebuild the day of the week from Date and store it in **Day** as a factor with Monday as the baseline. For the Week 9 models I also create the two-level predictor **Weekend**, which is "Weekend" for Saturday and Sunday and "Weekday" otherwise. I use the numeric weekday code from `format(, "%u")` so the result does not depend on the language of the computer.
+
+```{r prepare}
+dat$Date2 <- as.Date(dat$Date, origin = "1899-12-30")                       # Excel date number to a real date
+wk <- as.numeric(format(dat$Date2, "%u"))                                   # 1 = Monday, ..., 7 = Sunday
+dat$Day <- factor(c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[wk],
+                  levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"))   # Monday is the baseline
+dat$Weekend <- factor(ifelse(wk >= 6, "Weekend", "Weekday"),
+                      levels = c("Weekday", "Weekend"))                     # Weekday is the baseline
+dat$AvgTemp <- (dat$HighTemp + dat$LowTemp) / 2                             # new variable: average temperature
+dat$NewPrecip <- ifelse(dat$Precipitation > 0, 1, 0)                        # new variable: 0 = dry, 1 = rain
+dat$Bridge <- dat[, 6]                                                      # the response: daily count on my bridge
+dat$logTotal <- log(dat$Total)                                              # offset for the rate model
+dat$Share <- dat$Bridge / dat$Total                                         # my bridge's share of all four bridges
+cor.hl <- cor(dat$HighTemp, dat$LowTemp)
+```
+
+## First look at the data
+
+Here I look at the five-number summary of the numerical variables, including the new average temperature, and at plots of the count over time.
+
+```{r summary}
+sum.tab <- sapply(dat[, c("HighTemp", "LowTemp", "AvgTemp", "Precipitation", "Bridge", "Total", "Share")],
+                  function(x) c(Min = min(x), Median = median(x), Mean = mean(x), Max = max(x), SD = sd(x)))
+pander(t(sum.tab), digits = 4, caption = "Summary statistics of the numerical variables")
+```
+
+The data cover **`r n.days` days**, from `r format(min(dat$Date2), "%B %d, %Y")` to `r format(max(dat$Date2), "%B %d, %Y")`, and **`r sum(dat$Weekend == "Weekend")`** of those days are weekend days. On an average day, about `r round(mean(dat$Bridge))` cyclists crossed the `r bridge.name`, and these made up about `r round(100*mean(dat$Share), 1)`% of the cyclists on all four bridges. It rained (precipitation above 0) on **`r sum(dat$NewPrecip == 1)`** of the `r n.days` days, and the maximum was `r max(dat$Precipitation)` inches. The average temperature ranges from `r min(dat$AvgTemp)` to `r max(dat$AvgTemp)` degrees. A noticeable feature is that the standard deviation of the daily count (`r round(sd(dat$Bridge))`) is much larger than what a Poisson distribution with this mean would allow (its SD would be about `r round(sqrt(mean(dat$Bridge)))`). I come back to this important point in the dispersion sections.
+
+```{r time-plot, fig.cap="Daily cyclists on the bridge (left) and the bridge's share of all four bridges (right). Weekend days are shown in red."}
+par(mfrow = c(1, 2), mar = c(4.5, 4.5, 3, 1))
+col.wk <- ifelse(dat$Weekend == "Weekend", "firebrick", "steelblue")
+plot(dat$Date2, dat$Bridge, type = "b", pch = 19, col = col.wk, xlab = "Date", ylab = "Cyclists per day",
+     main = "Daily count", cex.main = 0.9)
+legend("bottomleft", c("Weekday", "Weekend"), pch = 19, col = c("steelblue", "firebrick"), bty = "n", cex = 0.8)
+plot(dat$Date2, dat$Share, type = "b", pch = 19, col = col.wk, xlab = "Date", ylab = "Share of the four bridges",
+     main = "Daily share", cex.main = 0.9)
+```
+
+The left panel shows that the daily count goes up and down quickly, and the red weekend points are usually among the lowest values, so the day of the week looks important. The right panel shows that the share of the four bridges stays in a narrow band around `r round(100*mean(dat$Share), 0)`% and does not show the same weekend drop. This is a first hint that the weekend lowers the traffic on all the bridges together, so it changes the count more than it changes the share.
+
+```{r scatter-plots, fig.cap="Daily count versus the high temperature (left) and versus precipitation (right)."}
+par(mfrow = c(1, 2), mar = c(4.5, 4.5, 3, 1))
+plot(dat$HighTemp, dat$Bridge, pch = 19, col = col.wk, xlab = "High temperature (F)", ylab = "Cyclists per day",
+     main = "Count vs. high temperature", cex.main = 0.9)
+plot(dat$Precipitation, dat$Bridge, pch = 19, col = col.wk, xlab = "Precipitation (inches)", ylab = "Cyclists per day",
+     main = "Count vs. precipitation", cex.main = 0.9)
+```
+
+The left scatter plot shows no strong straight-line relationship between the high temperature and the count in this month, which is not surprising because the high temperature varies only between `r min(dat$HighTemp)` and `r max(dat$HighTemp)` degrees. The right plot shows that the days with rain had some of the lowest counts. The high and low temperatures are strongly correlated with each other (*r* = `r round(cor.hl, 2)`), which is one reason to combine them into the single predictor AvgTemp in the Week 10 revision.
+
+# Research Questions
+
+The practical question is how the number of cyclists using the `r bridge.name` changes with the weather and the day of the week. To answer this, I will specifically look at and answer how high temperature, the low temperature, precipitation, and weekends affect the expected number of cyclists per day and how the same variables affect the **share** of all four-bridge cyclists who use the `r bridge.name`.
+
+Then after accounting for overdispersion, I will see how the **day of the week**, the **average temperature**, and **whether it rained** affect the daily count and wether the ordinary Poisson model good enough, or if the quasi-Poisson model needed?
+
+
+# The Statistical Model
+Here I go over the poisson regression model and its assumptions. Then we go over the quasi-Poisson model and how I got to the final model.
+
+## Poisson regression and its assumptions
+
+The response is a count of events (cyclists) in a fixed period (24 hours), so I use a **Poisson regression model**. It assumes that:
+
+* **Poisson response:** the response is a count per unit of time or space and follows a Poisson distribution,
+* **Independence:** the observations are independent of one another,
+* **Mean equals variance:** the mean and the variance of the response are equal, and
+* **Linearity:** the log of the mean is a linear function of the predictors.
+
+The **count model** is
+$$\log(\mu) = \beta_0 + \beta_1\,\text{HighTemp} + \beta_2\,\text{LowTemp} + \beta_3\,\text{Precipitation} + \beta_4\,\text{Weekend},$$
+where $\mu$ is the expected number of cyclists per day. A coefficient $\beta_i$ is the change in the **log** of the expected count for a one-unit increase in that predictor, with the other predictors fixed, so $e^{\beta_i}$ is the factor by which the expected count is multiplied (a rate ratio).
+
+The **rate model** adds the log of the total as an offset:
+$$\log(\mu / \text{Total}) = \beta_0 + \beta_1\,\text{HighTemp} + \beta_2\,\text{LowTemp} + \beta_3\,\text{Precipitation} + \beta_4\,\text{Weekend},$$
+which is the same as $\log(\mu) = \beta_0 + \cdots + \log(\text{Total})$. The coefficients now describe the **share** of the four-bridge total.
+
+## The quasi-Poisson model
+
+The Poisson model assumes $Var(Y) = \mu$. The **quasi-Poisson model** relaxes this to
+$$Var(Y) = \phi\,\mu,$$
+where $\phi$ is the **dispersion parameter**. The model has the same mean structure as the Poisson model, so the **coefficient estimates are identical**, but the standard errors are multiplied by $\sqrt{\phi}$, so the p-values change. If $\phi$ is near 1, the Poisson model is fine. If $\phi$ is much larger than 1 (overdispersion), the Poisson standard errors are too small and its p-values are too optimistic. I estimate $\phi$ with the Pearson statistic
+$$\phi = \frac{1}{n - p}\sum_{i=1}^{n}\frac{(y_i - \mu_i)^2}{\mu_i},$$
+where $n$ is the number of days and $p$ is the number of estimated coefficients. The **Week 10 quasi-Poisson model** is
+$$\log(\mu) = \beta_0 + \beta_1\,\text{Day} + \beta_2\,\text{AvgTemp} + \beta_3\,\text{NewPrecip},$$
+with $\text{AvgTemp} = (\text{HighTemp} + \text{LowTemp})/2$, and NewPrecip equal to 0 if Precipitation = 0 and 1 if Precipitation > 0.
+
+## Model building
+
+For the count and rate models I start with all four predictors and use the p-values of the coefficients to select the variables. At each step I remove the variable with the largest p-value, as long as that p-value is above 0.05, and refit the model. The final model has only significant variables. The functions below do the selection, build the coefficient tables, and compute the dispersion.
+
+```{r select-function}
+select.by.p <- function(fit, alpha = 0.05) {
+  path <- data.frame(Step = integer(), Dropped = character(), p.value = numeric())
+  repeat {
+    pv <- summary(fit)$coef[-1, 4, drop = FALSE]                              # p-values without the intercept
+    trm <- attr(terms(fit), "term.labels")                                    # the predictors still in the model
+    if (length(trm) == 0) break
+    p.term <- sapply(trm, function(t) min(pv[startsWith(rownames(pv), t), 1]))   # one p-value per predictor
+    if (max(p.term) <= alpha) break                                           # all predictors significant: stop
+    worst <- names(which.max(p.term))
+    path <- rbind(path, data.frame(Step = nrow(path) + 1, Dropped = worst, p.value = max(p.term)))
+    fit <- update(fit, as.formula(paste(". ~ . -", worst)))                   # drop it and refit
+  }
+  list(fit = fit, path = path)
+}
+
+coef.table <- function(fit) {
+  co <- summary(fit)$coef
+  quasi <- grepl("quasi", fit$family$family)
+  crit <- if (quasi) qt(0.975, fit$df.residual) else qnorm(0.975)            # t for quasi, z for Poisson
+  data.frame(Estimate = co[, 1], Std.Error = co[, 2], Stat = co[, 3],
+             p.value = ifelse(co[, 4] < 0.0001, "< 0.0001", sprintf("%.4f", co[, 4])),
+             Ratio = exp(co[, 1]),
+             Lower.95 = exp(co[, 1] - crit * co[, 2]), Upper.95 = exp(co[, 1] + crit * co[, 2]))
+}
+disp <- function(fit) sum(residuals(fit, type = "pearson")^2) / fit$df.residual   # Pearson dispersion statistic
+sig.terms <- function(fit, alpha = 0.05) {                                          # predictors with p < alpha
+  pq <- summary(fit)$coef[-1, 4]
+  sub("WeekendWeekend", "Weekend", names(pq)[pq < alpha])
+}
+```
+
+# Poisson Regression on the Counts } building the count model
+Here I go over how I built the count model, variable selection, coefficient interpretation and overdispersion.
+
+## The full model
+
+Here I fit the model with all four predictors to the daily counts.
+
+```{r count-full}
+count.full <- glm(Bridge ~ HighTemp + LowTemp + Precipitation + Weekend, family = poisson(link = "log"), data = dat)
+pander(coef.table(count.full), digits = 4, split.table = Inf, caption = "Poisson regression of the daily count: full model (Ratio = exp(Estimate))")
+```
+
+The table gives the estimate, the standard error, the z statistic, and the p-value of each coefficient, and also the ratio $e^{\beta}$ with its 95% confidence interval. All four predictors have p-values below 0.0001, so there is statistical evidence that each one is associated with the daily count. This is a very strong result, and I explain below why it should be treated with some care.
+
+## Variable selection by p-values
+
+Here I check whether any variables have p-values above 0.05. If any do, they are removed from the model.
+
+```{r count-select}
+count.sel <- select.by.p(count.full)
+count.final <- count.sel$fit
+if (nrow(count.sel$path) == 0) {
+  cat("No variable was removed: every p-value was below 0.05 in the full model.")
+} else {
+  pander(count.sel$path, caption = "Variables removed from the count model")
+}
+```
+
+Because every p-value is already below 0.05, no variable is removed, and the full model is also the **final count model**.
+
+## Interpretation of the coefficients
+
+```{r count-final}
+pander(coef.table(count.final), digits = 4, split.table = Inf, caption = "Final Poisson regression model for the daily count")
+bc <- coef(count.final); rc <- exp(bc)
+```
+
+Each coefficient is read with the other variables held fixed:
+
+* **Precipitation:** the coefficient is `r round(bc["Precipitation"], 4)`, so each additional inch of precipitation multiplies the expected daily count by `r round(rc["Precipitation"], 3)`, about `r round(100*(1 - rc["Precipitation"]))`% fewer cyclists.
+* **Weekend:** the expected count on a weekend is `r round(rc["WeekendWeekend"], 3)` times the weekday count, about `r round(100*(1 - rc["WeekendWeekend"]), 1)`% fewer cyclists. This is consistent with a bridge that is used heavily for commuting.
+* **HighTemp and LowTemp:** the two temperatures have opposite signs (`r round(bc["HighTemp"], 4)` and `r round(bc["LowTemp"], 4)`) because they are strongly correlated (*r* = `r round(cor.hl, 2)`), so they should be read together. If both rise by one degree, the count is multiplied by `r round(exp(bc["HighTemp"] + bc["LowTemp"]), 4)`, only a `r round(100*abs(exp(bc["HighTemp"] + bc["LowTemp"]) - 1), 1)`% change. This is the reason I replace the two temperatures by their average.
+* **Intercept:** the log of the expected count for a weekday with no rain and temperatures of 0 degrees, which is far outside the data, so it has no practical meaning.
+
+## Overdispersion check of the count model
+
+The Poisson model assumes that the variance of the count equals its mean. I check this using the dispersion statistic (the sum of the squared Pearson residuals divided by the residual degrees of freedom), which should be close to 1 if the assumption holds. I also refit the final model as a quasi-Poisson model and compare the p-values.
+
+```{r count-disp}
+count.q <- update(count.final, family = quasipoisson)
+cmp.count <- data.frame(Term = rownames(summary(count.final)$coef),
+                        Poisson.p = summary(count.final)$coef[, 4], Quasi.p = summary(count.q)$coef[, 4])
+cmp.count$Poisson.p <- ifelse(cmp.count$Poisson.p < 0.0001, "< 0.0001", sprintf("%.4f", cmp.count$Poisson.p))
+cmp.count$Quasi.p <- ifelse(summary(count.q)$coef[, 4] < 0.0001, "< 0.0001", sprintf("%.4f", summary(count.q)$coef[, 4]))
+pander(cmp.count, caption = "p-values of the final count model under the Poisson and the quasi-Poisson assumptions")
+d.count <- disp(count.final)
+```
+
+The dispersion statistic is **`r round(d.count, 1)`**, far above 1, so the daily counts are much more spread out than a Poisson distribution allows. The Poisson standard errors are too small by a factor of about `r round(sqrt(d.count), 1)`, which is why every p-value in the Poisson table was essentially zero. With the corrected quasi-Poisson p-values, `r paste(sig.terms(count.q), collapse = " and ")` remain significant. I therefore trust the conclusions about precipitation and weekends more than the conclusions about the two temperatures.
+
+# Poisson Regression on the Rates | Building the rate model
+Here I go over how and why I built the rate model, the variable selection, coefficient interpretation and overdispersion.
+
+## Why a rate model
+
+Counts on one bridge depend on how many cyclists ride that day on all the bridges. A warm Tuesday and a cold Sunday have very different totals, so the count model mixes two things: how many cyclists there are, and how they split among the bridges. The rate model separates them by using the offset `log(Total)`, so the model estimates the share of all four-bridge cyclists who use the `r bridge.name`.
+
+## The full rate model
+
+```{r rate-full}
+rate.full <- glm(Bridge ~ HighTemp + LowTemp + Precipitation + Weekend + offset(logTotal),
+                 family = poisson(link = "log"), data = dat)
+pander(coef.table(rate.full), digits = 4, split.table = Inf, caption = "Poisson regression of the rate (share of the four bridges): full model")
+```
+
+In the full rate model, the p-value of Weekend is `r round(summary(rate.full)$coef["WeekendWeekend", 4], 3)`. This matches what the right panel of the time plot suggested: the weekend lowers the number of cyclists on every bridge, so the bridge's *share* does not change much.
+
+## Variable selection by p-values
+
+```{r rate-select}
+rate.sel <- select.by.p(rate.full)
+rate.final <- rate.sel$fit
+if (nrow(rate.sel$path) == 0) {
+  cat("No variable was removed: every p-value was below 0.05 in the full model.")
+} else {
+  pander(rate.sel$path, caption = "Variables removed from the rate model")
+}
+```
+
+The selection removed **`r paste(rate.sel$path$Dropped, collapse = ", ")`** and then stopped, because all the remaining p-values are below 0.05.
+
+## Interpretation of the coefficients
+
+```{r rate-final}
+pander(coef.table(rate.final), digits = 4, split.table = Inf, caption = "Final Poisson rate model (share of the four bridges)")
+br <- coef(rate.final); rr <- exp(br)
+```
+
+Here a coefficient describes the change in the log of the **share**, and $e^{\beta}$ is the factor by which the share is multiplied:
+
+* **Precipitation:** each additional inch of precipitation multiplies the bridge's share by `r round(rr["Precipitation"], 3)` (a `r round(100*(rr["Precipitation"] - 1), 1)`% change). On rainy days the `r bridge.name` loses fewer cyclists than the four bridges together, so its share rises.
+* **HighTemp and LowTemp:** the two temperatures again have opposite signs and nearly cancel: warming both by one degree multiplies the share by `r round(exp(br["HighTemp"] + br["LowTemp"]), 4)`, which is small.
+* **Weekend:** it was removed, so there is no evidence that the weekend changes the `r bridge.name`'s share.
+
+## Overdispersion check of the rate model
+
+```{r rate-disp}
+rate.q <- update(rate.final, family = quasipoisson)
+cmp.rate <- data.frame(Term = rownames(summary(rate.final)$coef),
+                       Poisson.p = summary(rate.final)$coef[, 4], Quasi.p = summary(rate.q)$coef[, 4])
+cmp.rate$Poisson.p <- ifelse(cmp.rate$Poisson.p < 0.0001, "< 0.0001", sprintf("%.4f", cmp.rate$Poisson.p))
+cmp.rate$Quasi.p <- ifelse(summary(rate.q)$coef[, 4] < 0.0001, "< 0.0001", sprintf("%.4f", summary(rate.q)$coef[, 4]))
+pander(cmp.rate, caption = "p-values of the final rate model under the Poisson and the quasi-Poisson assumptions")
+d.rate <- disp(rate.final)
+```
+
+The dispersion of the rate model is **`r round(d.rate, 1)`**, much smaller than in the count model but still well above 1. Dividing by the total removes much of the day-to-day variation that comes from the overall level of riding. With the corrected p-values, the precipitation effect on the share is **no longer significant** (p = `r round(summary(rate.q)$coef["Precipitation", 4], 3)`), so the slight rise of the share on rainy days is not reliable.
+
+# Quasi-Poisson Regression Model with Day, AvgTemp, and NewPrecip (Week 10)
+
+The count model has two weaknesses. The two temperatures are strongly correlated and have opposite signs, which makes them hard to interpret, and the day of the week was reduced to a single weekend indicator. In this section I replace the two temperatures by their average, replace the precipitation amount by a rain indicator, use the full day of the week, and fit a quasi-Poisson model to the daily counts.
+
+## The new predictors
+
+I define $\text{AvgTemp} = (\text{HighTemp} + \text{LowTemp})/2$, and $\text{NewPrecip} = 0$ if Precipitation = 0 and $\text{NewPrecip} = 1$ if Precipitation > 0. These were created in the data preparation chunk. Here I check them.
+
+```{r new-vars}
+tab.rain <- data.frame(NewPrecip = c("0 (dry)", "1 (rain)"),
+                       Days = c(sum(dat$NewPrecip == 0), sum(dat$NewPrecip == 1)),
+                       Mean.count = c(mean(dat$Bridge[dat$NewPrecip == 0]), mean(dat$Bridge[dat$NewPrecip == 1])),
+                       Mean.AvgTemp = c(mean(dat$AvgTemp[dat$NewPrecip == 0]), mean(dat$AvgTemp[dat$NewPrecip == 1])))
+pander(tab.rain, digits = 5, caption = "Daily count and average temperature by rain indicator")
+tab.day <- data.frame(Day = levels(dat$Day),
+                      Days = as.vector(table(dat$Day)),
+                      Mean.count = as.vector(tapply(dat$Bridge, dat$Day, mean)))
+pander(tab.day, digits = 5, caption = "Daily count by day of the week")
+```
+
+The rain indicator splits the month into `r tab.rain$Days[1]` dry days and `r tab.rain$Days[2]` rainy days, and the average count is about `r round(tab.rain$Mean.count[1])` on dry days against `r round(tab.rain$Mean.count[2])` on rainy days. The day-of-week table shows how the average count changes across the week, with the lowest averages on `r tab.day$Day[which.min(tab.day$Mean.count)]`.
+
+## Fitting the quasi-Poisson regression model
+
+Here I fit the quasi-Poisson model with the three predictors to the bridge counts. I also fit the ordinary Poisson model with the same predictors so that I can compare them in Step 2.
+
+```{r quasi-fit}
+pois.new  <- glm(Bridge ~ Day + AvgTemp + NewPrecip, family = poisson(link = "log"), data = dat)
+quasi.new <- glm(Bridge ~ Day + AvgTemp + NewPrecip, family = quasipoisson(link = "log"), data = dat)
+pander(coef.table(quasi.new), digits = 4, split.table = Inf,
+       caption = "Quasi-Poisson regression of the daily count (Ratio = exp(Estimate), t-based 95% CI)")
+qb <- coef(quasi.new); qr <- exp(qb)
+```
+
+The model is
+$$\log(\hat\mu) = `r round(qb[1], 4)` + \text{Day effects} `r round(qb["AvgTemp"], 4)`\,\text{AvgTemp} `r round(qb["NewPrecip"], 4)`\,\text{NewPrecip},$$
+where the day effects are the coefficients of Tue through Sun in the table (Monday is the baseline). The ratio column turns every coefficient into a multiplier of the expected count.
+
+## Choosing the Poisson or quasi-Poisson model based on dispersion
+
+Here I report the estimated dispersion parameter and compare the Poisson and quasi-Poisson tests. The two models have **the same coefficients**, so only the standard errors and p-values can differ.
+
+```{r quasi-disp}
+phi <- summary(quasi.new)$dispersion                                   # Pearson estimate of phi
+dev.disp <- deviance(pois.new) / df.residual(pois.new)                 # deviance-based check
+same.coef <- all.equal(coef(pois.new), coef(quasi.new))                # TRUE if the coefficients are identical
+pq <- data.frame(Term = rownames(summary(pois.new)$coef),
+                 Estimate = coef(pois.new),
+                 Poisson.SE = summary(pois.new)$coef[, 2], Quasi.SE = summary(quasi.new)$coef[, 2],
+                 Poisson.p = summary(pois.new)$coef[, 4], Quasi.p = summary(quasi.new)$coef[, 4])
+pq$Poisson.p <- ifelse(pq$Poisson.p < 0.0001, "< 0.0001", sprintf("%.4f", pq$Poisson.p))
+pq$Quasi.p <- ifelse(summary(quasi.new)$coef[, 4] < 0.0001, "< 0.0001", sprintf("%.4f", summary(quasi.new)$coef[, 4]))
+rownames(pq) <- NULL
+pander(pq, digits = 4, split.table = Inf, caption = "Same coefficients, different standard errors and p-values")
+disp.tab <- data.frame(Measure = c("Estimated dispersion phi (Pearson, quasi-Poisson)",
+                                   "Deviance / df (Poisson)", "Square root of phi (SE inflation factor)"),
+                       Value = c(phi, dev.disp, sqrt(phi)))
+pander(disp.tab, digits = 4, split.table = Inf, caption = "Dispersion of the Day, AvgTemp, NewPrecip model")
+```
+
+The estimated dispersion is **$\phi$ = `r round(phi, 1)`**, and the deviance divided by its degrees of freedom is `r round(dev.disp, 1)`. Both are far above 1, so the data are strongly **overdispersed**. The coefficients of the two models are identical (`r isTRUE(same.coef)`), but the quasi-Poisson standard errors are about `r round(sqrt(phi), 1)` times larger than the Poisson ones, which is exactly the square root of the dispersion. In the ordinary Poisson model almost every p-value is below 0.0001, which is not believable for a month of `r n.days` days. In the quasi-Poisson model many of these effects are no longer significant.
+
+Because the dispersion is far above 1, the Poisson assumption that the mean equals the variance is clearly violated, so the Poisson standard errors and p-values cannot be trusted. I choose the **quasi-Poisson model**. It keeps the same fitted counts and rate ratios, and corrects the standard errors, so its p-values and confidence intervals are the ones I use for inference.
+
+## Identifying significant predictors
+
+Because Day has six coefficients, I test the whole variable with an F test, which is the correct test for a quasi-Poisson model because $\phi$ is estimated from the data.
+
+```{r quasi-F}
+dr <- drop1(quasi.new, test = "F")
+Ftab <- data.frame(Variable = rownames(dr)[-1], Df = dr$Df[-1], F.value = dr[["F value"]][-1],
+                   p.value = ifelse(dr[["Pr(>F)"]][-1] < 0.0001, "< 0.0001", sprintf("%.4f", dr[["Pr(>F)"]][-1])))
+pander(Ftab, digits = 4, split.table = Inf, caption = "F tests of each predictor in the quasi-Poisson model")
+pF <- setNames(dr[["Pr(>F)"]][-1], rownames(dr)[-1])
+```
+
+The F tests show that **NewPrecip** has p `r fmtp(pF["NewPrecip"])`, **Day** has p `r fmtp(pF["Day"])`, and **AvgTemp** has p `r fmtp(pF["AvgTemp"])`. At the 5% level, `r paste(names(pF)[pF < 0.05], collapse = " and ")` `r ifelse(sum(pF < 0.05) == 1, "is", "are")` significant, and `r ifelse(any(pF >= 0.05), paste(names(pF)[pF >= 0.05], collapse = " and "), "no predictor")` `r ifelse(sum(pF >= 0.05) == 1, "is", "are")` not.
+
+## Interpretation of the coefficients
+
+Each coefficient is read with the other variables held fixed, and $e^{\beta}$ is the factor by which the expected daily count is multiplied.
+
+* **NewPrecip:** the ratio is `r round(qr["NewPrecip"], 3)`, so on a rainy day the expected count is about `r round(100*(1 - qr["NewPrecip"]))`% lower than on a dry day with the same day of the week and average temperature (quasi-Poisson p `r fmtp(summary(quasi.new)$coef["NewPrecip", 4])`).
+* **AvgTemp:** the ratio is `r round(qr["AvgTemp"], 4)` per degree, a `r round(100*(qr["AvgTemp"] - 1), 1)`% change in the expected count for each additional degree (p `r fmtp(summary(quasi.new)$coef["AvgTemp", 4])`). Because the average of the high and the low replaces two correlated variables, this is a single interpretable temperature effect, and the sign is no longer split between two coefficients.
+* **Day:** relative to Monday, Saturday has a ratio of `r round(qr["DaySat"], 3)` (about `r round(100*(1 - qr["DaySat"]))`% fewer cyclists) and Sunday has a ratio of `r round(qr["DaySun"], 3)` (about `r round(100*(1 - qr["DaySun"]))`% fewer). The weekday coefficients (Tue to Fri) are `r paste(round(qr[c("DayTue", "DayWed", "DayThu", "DayFri")], 3), collapse = ", ")`, so they are closer to Monday.
+* **Intercept:** the expected count on a dry Monday with an average temperature of 0 degrees, which is far outside the data (the observed range is `r min(dat$AvgTemp)` to `r max(dat$AvgTemp)`), so it has no practical meaning.
+
+## Visualizing counts against the predictors
+
+Here I plot the bridge counts against each of the three predictors. The left panel shows the counts by day of the week, the middle panel shows the counts against the average temperature with the fitted quasi-Poisson curves for dry and rainy days, and the right panel shows the counts by the rain indicator.
+
+```{r quasi-plot, fig.width=10, fig.height=4, fig.cap="Daily bridge counts against Day (left), AvgTemp (middle), and NewPrecip (right). In the middle panel the blue points and line are dry days and the red points and line are rainy days; the lines are the fitted quasi-Poisson counts."}
+par(mfrow = c(1, 3), mar = c(4.5, 4.5, 3, 1))
+# Panel 1: counts by day of the week
+boxplot(Bridge ~ Day, data = dat, col = "lightsteelblue", xlab = "Day of the week", ylab = "Cyclists per day",
+        main = "Count by Day", cex.main = 0.9)
+# Panel 2: counts against AvgTemp, with the fitted curves for dry and rainy days
+tg <- seq(min(dat$AvgTemp), max(dat$AvgTemp), length.out = 50)
+fit.curve <- function(rain) sapply(tg, function(t) {
+  nd <- dat; nd$AvgTemp <- t; nd$NewPrecip <- rain                       # keep the observed days, change temperature and rain
+  mean(predict(quasi.new, newdata = nd, type = "response"))             # average fitted count over the observed days
+})
+col.rain <- ifelse(dat$NewPrecip == 1, "firebrick", "steelblue")
+plot(dat$AvgTemp, dat$Bridge, pch = 19, col = adjustcolor(col.rain, 0.6), xlab = "Average temperature (F)",
+     ylab = "Cyclists per day", main = "Count vs. AvgTemp", cex.main = 0.9)
+lines(tg, fit.curve(0), col = "steelblue", lwd = 2)
+lines(tg, fit.curve(1), col = "firebrick", lwd = 2, lty = 2)
+legend("bottomright", c("Dry day", "Rainy day"), col = c("steelblue", "firebrick"), lty = 1:2, lwd = 2, pch = 19, bty = "n", cex = 0.8)
+# Panel 3: counts by the rain indicator
+boxplot(Bridge ~ NewPrecip, data = dat, col = c("lightsteelblue", "salmon"), names = c("Dry (0)", "Rain (1)"),
+        xlab = "NewPrecip", ylab = "Cyclists per day", main = "Count by NewPrecip", cex.main = 0.9)
+```
+
+The left panel shows the counts by day of the week: the weekend boxes (Sat and Sun) sit below the weekday boxes, which agrees with the Day coefficients. The middle panel shows that the cloud of points is wide at every temperature, and the fitted curves are fairly flat because the average temperature has only a weak association with the count in this month. The rainy-day curve lies about `r round(100*(1 - qr["NewPrecip"]))`% below the dry-day curve at every temperature, since the two curves differ only by the constant factor `r round(qr["NewPrecip"], 2)`. The right panel shows that the rainy days have a lower typical count than the dry days (about `r round(tab.rain$Mean.count[2])` against `r round(tab.rain$Mean.count[1])`), but the two boxes overlap, which is the same wide scatter that produced the large dispersion of `r round(phi, 0)`.
+
+# Summary of the Findings
+
+Here I summarize what the Week 9 models and the new Week 10 quasi-Poisson model say about the `r bridge.name` in `r format(min(dat$Date2), "%B %Y")`.
+
+```{r summary-table}
+cmp <- merge(data.frame(Term = names(coef(count.final)), Count.model = exp(coef(count.final))),
+             data.frame(Term = names(coef(rate.final)), Rate.model = exp(coef(rate.final))),
+             by = "Term", all = TRUE, sort = FALSE)
+cmp <- cmp[match(c("(Intercept)", "HighTemp", "LowTemp", "Precipitation", "WeekendWeekend"), cmp$Term), ]
+cmp$Rate.model <- ifelse(is.na(cmp$Rate.model), "removed", sprintf("%.4f", cmp$Rate.model))
+cmp$Count.model <- sprintf("%.4f", cmp$Count.model)
+pander(cmp, row.names = FALSE, caption = "Rate ratios exp(coefficient) of the two Week 9 final models")
+qtab <- data.frame(Term = names(qr), Ratio = qr, p.value = summary(quasi.new)$coef[, 4])
+qtab$p.value <- ifelse(qtab$p.value < 0.0001, "< 0.0001", sprintf("%.4f", qtab$p.value))
+rownames(qtab) <- NULL
+pander(qtab, digits = 4, split.table = Inf, caption = "Rate ratios of the Week 10 quasi-Poisson model (Day, AvgTemp, NewPrecip)")
+```
+
+* **How many cyclists (count model):** precipitation and weekends are the clearest drivers. Each inch of rain is associated with about `r round(100*(1 - rc["Precipitation"]))`% fewer cyclists, and weekends with about `r round(100*(1 - rc["WeekendWeekend"]))`% fewer than weekdays. The two temperatures have opposite signs because they are strongly correlated (*r* = `r round(cor.hl, 2)`), and their combined effect is small.
+* **Where cyclists go (rate model):** the weekend plays no role in the bridge's share, so weekends reduce riding on all four bridges about equally. The temperature terms have small effects of opposite sign, and the apparent rise of the share with rain is not significant after the overdispersion correction.
+* **The new quasi-Poisson model:** with Day, AvgTemp, and NewPrecip as predictors, a rainy day is associated with about `r round(100*(1 - qr["NewPrecip"]))`% fewer cyclists (p `r fmtp(pF["NewPrecip"])`), the day of the week has p `r fmtp(pF["Day"])` with Saturday and Sunday about `r round(100*(1 - qr["DaySat"]))`% and `r round(100*(1 - qr["DaySun"]))`% below Monday, and AvgTemp has p `r fmtp(pF["AvgTemp"])`.
+* **Poisson versus quasi-Poisson:** the estimated dispersion is **`r round(phi, 1)`**, far above 1, so the Poisson assumption fails. The Poisson and quasi-Poisson models give the same coefficients, but the quasi-Poisson standard errors are about `r round(sqrt(phi), 1)` times larger, and its p-values are the trustworthy ones. I therefore report the quasi-Poisson model.
+* **Worth mentioning** consecutive days are probably not independent (weather and traffic persist from day to day), and the data covers only one month of one bridge, so the conclusions describe this sheet of data only. A negative binomial regression, or a model that allows for correlation between days, is a natural next step for the overdispersed counts.
