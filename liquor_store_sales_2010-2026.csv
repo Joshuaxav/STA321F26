@@ -1,0 +1,201 @@
+Month,Sales_MillionsUSD,Period
+2010-02,2790,pre-COVID
+2010-03,3076,pre-COVID
+2010-04,3168,pre-COVID
+2010-05,3319,pre-COVID
+2010-06,3292,pre-COVID
+2010-07,3503,pre-COVID
+2010-08,3307,pre-COVID
+2010-09,3222,pre-COVID
+2010-10,3349,pre-COVID
+2010-11,3374,pre-COVID
+2010-12,4484,pre-COVID
+2011-01,2765,pre-COVID
+2011-02,2858,pre-COVID
+2011-03,3111,pre-COVID
+2011-04,3221,pre-COVID
+2011-05,3325,pre-COVID
+2011-06,3402,pre-COVID
+2011-07,3584,pre-COVID
+2011-08,3428,pre-COVID
+2011-09,3373,pre-COVID
+2011-10,3372,pre-COVID
+2011-11,3499,pre-COVID
+2011-12,4696,pre-COVID
+2012-01,2877,pre-COVID
+2012-02,3077,pre-COVID
+2012-03,3413,pre-COVID
+2012-04,3278,pre-COVID
+2012-05,3640,pre-COVID
+2012-06,3668,pre-COVID
+2012-07,3589,pre-COVID
+2012-08,3606,pre-COVID
+2012-09,3365,pre-COVID
+2012-10,3482,pre-COVID
+2012-11,3714,pre-COVID
+2012-12,4917,pre-COVID
+2013-01,3021,pre-COVID
+2013-02,3088,pre-COVID
+2013-03,3465,pre-COVID
+2013-04,3334,pre-COVID
+2013-05,3771,pre-COVID
+2013-06,3636,pre-COVID
+2013-07,3848,pre-COVID
+2013-08,3908,pre-COVID
+2013-09,3459,pre-COVID
+2013-10,3605,pre-COVID
+2013-11,3863,pre-COVID
+2013-12,4961,pre-COVID
+2014-01,3213,pre-COVID
+2014-02,3143,pre-COVID
+2014-03,3466,pre-COVID
+2014-04,3511,pre-COVID
+2014-05,3947,pre-COVID
+2014-06,3822,pre-COVID
+2014-07,4014,pre-COVID
+2014-08,3988,pre-COVID
+2014-09,3601,pre-COVID
+2014-10,3857,pre-COVID
+2014-11,3865,pre-COVID
+2014-12,5245,pre-COVID
+2015-01,3359,pre-COVID
+2015-02,3273,pre-COVID
+2015-03,3625,pre-COVID
+2015-04,3631,pre-COVID
+2015-05,4070,pre-COVID
+2015-06,3957,pre-COVID
+2015-07,4252,pre-COVID
+2015-08,3995,pre-COVID
+2015-09,3818,pre-COVID
+2015-10,4004,pre-COVID
+2015-11,3995,pre-COVID
+2015-12,5444,pre-COVID
+2016-01,3376,pre-COVID
+2016-02,3528,pre-COVID
+2016-03,3786,pre-COVID
+2016-04,3844,pre-COVID
+2016-05,4114,pre-COVID
+2016-06,4179,pre-COVID
+2016-07,4436,pre-COVID
+2016-08,4182,pre-COVID
+2016-09,4136,pre-COVID
+2016-10,4138,pre-COVID
+2016-11,4359,pre-COVID
+2016-12,5645,pre-COVID
+2017-01,3474,pre-COVID
+2017-02,3503,pre-COVID
+2017-03,3957,pre-COVID
+2017-04,3960,pre-COVID
+2017-05,4328,pre-COVID
+2017-06,4353,pre-COVID
+2017-07,4466,pre-COVID
+2017-08,4324,pre-COVID
+2017-09,4221,pre-COVID
+2017-10,4218,pre-COVID
+2017-11,4506,pre-COVID
+2017-12,5801,pre-COVID
+2018-01,3691,pre-COVID
+2018-02,3695,pre-COVID
+2018-03,4327,pre-COVID
+2018-04,4044,pre-COVID
+2018-05,4594,pre-COVID
+2018-06,4635,pre-COVID
+2018-07,4659,pre-COVID
+2018-08,4597,pre-COVID
+2018-09,4325,pre-COVID
+2018-10,4464,pre-COVID
+2018-11,4834,pre-COVID
+2018-12,6017,pre-COVID
+2019-01,3871,pre-COVID
+2019-02,3853,pre-COVID
+2019-03,4373,pre-COVID
+2019-04,4295,pre-COVID
+2019-05,4790,pre-COVID
+2019-06,4697,pre-COVID
+2019-07,4930,pre-COVID
+2019-08,4958,pre-COVID
+2019-09,4401,pre-COVID
+2019-10,4625,pre-COVID
+2019-11,4995,pre-COVID
+2019-12,6241,pre-COVID
+2020-01,4121,pre-COVID
+2020-02,4242,pre-COVID
+2020-03,5152,COVID drink-at-home surge
+2020-04,4826,COVID drink-at-home surge
+2020-05,5822,COVID drink-at-home surge
+2020-06,5656,COVID drink-at-home surge
+2020-07,5995,COVID drink-at-home surge
+2020-08,5723,COVID drink-at-home surge
+2020-09,5497,COVID drink-at-home surge
+2020-10,5682,COVID drink-at-home surge
+2020-11,5726,COVID drink-at-home surge
+2020-12,7265,COVID drink-at-home surge
+2021-01,5049,COVID drink-at-home surge
+2021-02,4919,COVID drink-at-home surge
+2021-03,5670,COVID drink-at-home surge
+2021-04,5666,COVID drink-at-home surge
+2021-05,6056,COVID drink-at-home surge
+2021-06,5995,COVID drink-at-home surge
+2021-07,6169,COVID drink-at-home surge
+2021-08,5720,COVID drink-at-home surge
+2021-09,5588,COVID drink-at-home surge
+2021-10,5775,COVID drink-at-home surge
+2021-11,6030,COVID drink-at-home surge
+2021-12,7652,COVID drink-at-home surge
+2022-01,4935,post-COVID
+2022-02,5049,post-COVID
+2022-03,5586,post-COVID
+2022-04,5695,post-COVID
+2022-05,5884,post-COVID
+2022-06,5994,post-COVID
+2022-07,6161,post-COVID
+2022-08,5914,post-COVID
+2022-09,5774,post-COVID
+2022-10,5899,post-COVID
+2022-11,6176,post-COVID
+2022-12,7848,post-COVID
+2023-01,5101,post-COVID
+2023-02,5083,post-COVID
+2023-03,5653,post-COVID
+2023-04,5634,after Bud Light boycott (Apr 2023-)
+2023-05,6173,after Bud Light boycott (Apr 2023-)
+2023-06,6130,after Bud Light boycott (Apr 2023-)
+2023-07,6169,after Bud Light boycott (Apr 2023-)
+2023-08,5883,after Bud Light boycott (Apr 2023-)
+2023-09,5811,after Bud Light boycott (Apr 2023-)
+2023-10,5741,after Bud Light boycott (Apr 2023-)
+2023-11,6149,after Bud Light boycott (Apr 2023-)
+2023-12,7819,after Bud Light boycott (Apr 2023-)
+2024-01,4835,after Bud Light boycott (Apr 2023-)
+2024-02,5131,after Bud Light boycott (Apr 2023-)
+2024-03,5617,after Bud Light boycott (Apr 2023-)
+2024-04,5373,after Bud Light boycott (Apr 2023-)
+2024-05,6061,after Bud Light boycott (Apr 2023-)
+2024-06,5936,after Bud Light boycott (Apr 2023-)
+2024-07,6017,after Bud Light boycott (Apr 2023-)
+2024-08,5952,after Bud Light boycott (Apr 2023-)
+2024-09,5417,after Bud Light boycott (Apr 2023-)
+2024-10,5725,after Bud Light boycott (Apr 2023-)
+2024-11,6161,after Bud Light boycott (Apr 2023-)
+2024-12,7493,after Bud Light boycott (Apr 2023-)
+2025-01,4824,after Bud Light boycott (Apr 2023-)
+2025-02,4807,after Bud Light boycott (Apr 2023-)
+2025-03,5340,after Bud Light boycott (Apr 2023-)
+2025-04,5351,after Bud Light boycott (Apr 2023-)
+2025-05,6003,after Bud Light boycott (Apr 2023-)
+2025-06,5659,after Bud Light boycott (Apr 2023-)
+2025-07,5918,after Bud Light boycott (Apr 2023-)
+2025-08,5822,after Bud Light boycott (Apr 2023-)
+2025-09,5273,after Bud Light boycott (Apr 2023-)
+2025-10,5639,after Bud Light boycott (Apr 2023-)
+2025-11,5820,after Bud Light boycott (Apr 2023-)
+2025-12,7328,after Bud Light boycott (Apr 2023-)
+2026-01,4979,after Bud Light boycott (Apr 2023-)
+2026-02,4778,after Bud Light boycott (Apr 2023-)
+2026-03,5253,after Bud Light boycott (Apr 2023-)
+2026-04,5344,after Bud Light boycott (Apr 2023-)
+2026-05,5967,after Bud Light boycott (Apr 2023-)
+2026-06,5835,after Bud Light boycott (Apr 2023-)
+2026-07,6096,after Bud Light boycott (Apr 2023-)
+2026-08,5635,after Bud Light boycott (Apr 2023-)
+2026-09,5442,after Bud Light boycott (Apr 2023-)
